@@ -10,6 +10,17 @@ class String
   end
 end
 
+def until_unchanged(obj : Enumerable, &)
+  old_size = obj.size
+  ret = nil
+  loop do
+    ret = yield
+    break if obj.size == old_size
+    old_size = obj.size
+  end
+  ret
+end
+
 module Parser
   VERSION = "0.1.0"
 
@@ -25,17 +36,17 @@ module Parser
       io << symbol.inspect.colorize.cyan
     end
   end
-  record Dot do
+  struct Dot
     def inspect(io : IO)
       io << "·".colorize.red.bold
     end
   end
-  record Epsilon < Node do
+  struct Epsilon < Node
     def inspect(io : IO)
       io << "ɛ".colorize.red.bold
     end
   end
-  record EndOfStream < Node do
+  struct EndOfStream < Node
     def inspect(io : IO)
       io << "$".colorize.red.bold
     end
@@ -52,9 +63,6 @@ module Parser
     def smart_name : String
       (name == ENTRYPOINT ? "*".colorize.bold.green : name.colorize.bold).to_s
     end
-    def dot_index : Int32
-      @body.index(DOT).not_nil!
-    end
     def epsilon? : Bool
       @body == [EPSILON]
     end
@@ -64,10 +72,43 @@ module Parser
   end
 
   abstract class IBuilder(T)
-    abstract def initialize(analysis : Analysis(self))
+    abstract def initialize(@analysis : Analysis(self))
+    abstract def singleton(entrypoint : Production, dot : Int32) : T
+    abstract def initial(entrypoint : Production) : T
     abstract def closure(i : Set(T)) : Set(T)
-    abstract def goto(i : Set(T), x : Node) : Set(T)
-    abstract def items(entrypoint : Production) : Set(Set(T))
+
+    def initial(entrypoint : Production) : T
+      singleton(entrypoint, 0)
+    end
+
+    def final(entrypoint : Production) : T
+      singleton(entrypoint, 1)
+    end
+
+    def goto(i : Set(T), x : Node) : Set(T)
+      j = Set(T).new
+      i.each do |item|
+        if item.right_of_dot? == x
+          j += Set{item.copy_with(dot: item.dot + 1)}
+        end
+      end
+      closure(j)
+    end
+
+    def items(entrypoint : Production) : Set(Set(T))
+      c = Set(Set(T)).new
+      c << closure(Set{initial entrypoint})
+
+      until_unchanged(c) do
+        c.each do |i|
+          @analysis.all_symbols.each do |x|
+            transition = goto(i, x)
+            c << transition unless transition.empty?
+          end
+        end
+      end
+      c
+    end
   end
 
   abstract struct IItem
@@ -102,59 +143,22 @@ module Parser
       def initialize(@analysis : Analysis(self))
       end
 
-      def final(e)
-        Item.new(e, 1)
+      def singleton(e : Production, dot : Int32) : Item
+        Item.new e, dot
       end
 
       def closure(i : Set(Item)) : Set(Item)
         j = i.dup
-        loop do
-          done = true
+        until_unchanged(j) do
           j.each do |item|
             if (r = item.right_of_dot?).is_a? NonTerminal
               @analysis.@rules.select(&.name.== r.name).each do |production|
-                item = Item.new production, 0
-                unless item.in?(j)
-                  done = false
-                  j << item
-                end
+                j << Item.new production, 0
               end
             end
           end
-          break if done
         end
         j
-      end
-
-      def goto(i : Set(Item), x : Node) : Set(Item)
-        j = Set(Item).new
-        i.each do |item|
-          if item.right_of_dot? == x
-            shifted = item.copy_with dot: item.dot + 1
-            j += closure(Set{shifted})
-          end
-        end
-        j
-      end
-
-      def items(entrypoint : Production) : Set(Set(Item))
-        c = Set(Set(Item)).new
-        c << closure(Set{Item.new entrypoint, 0})
-
-        loop do
-          done = true
-          c.each do |i|
-            @analysis.all_symbols.each do |x|
-              transition = goto(i, x)
-              if !transition.empty? && !transition.in?(c)
-                c << transition
-                done = false
-              end
-            end
-          end
-          break if done
-        end
-        c
       end
     end
   end
@@ -169,79 +173,33 @@ module Parser
       def initialize(@analysis : Analysis(self))
       end
 
-      def final(e)
-        Item.new(e, 1, EOS)
+      def singleton(e : Production, dot : Int32) : Item
+        Item.new e, dot, EOS
       end
 
       def closure(i : Set(Item)) : Set(Item)
         j = i.dup
-        loop do
-          done = true
+        until_unchanged(j) do
           j.each do |item|
             if (r = item.right_of_dot?).is_a? NonTerminal
               r2 = item.body[item.dot + 1]?
               @analysis.@rules.select(&.name.== r.name).each do |production|
-                compound_first = if r2.nil?
-                  @analysis.first(item.lookahead)
-                else
-                  @analysis.first(r2, item.lookahead)
-                end
+                compound_first = @analysis.first(r2, item.lookahead)
                 compound_first.each do |b|
-                  item = Item.new production, 0, b
-                  unless item.in?(j)
-                    done = false
-                    j << item
-                  end
+                  j << Item.new production, 0, b
                 end
               end
             end
           end
-          break if done
         end
         j
-      end
-
-      def goto(i : Set(Item), x : Node) : Set(Item)
-        j = Set(Item).new
-        i.each do |item|
-          if item.right_of_dot? == x
-            shifted = item.copy_with dot: item.dot + 1
-            j += Set{shifted}
-          end
-        end
-        closure(j)
-      end
-
-      def items(entrypoint : Production) : Set(Set(Item))
-        c = Set(Set(Item)).new
-        c << closure(Set{Item.new entrypoint, 0, EOS})
-
-        loop do
-          done = true
-          c.each do |i|
-            @analysis.all_symbols.each do |x|
-              transition = goto(i, x)
-              if !transition.empty? && !transition.in?(c)
-                c << transition
-                done = false
-              end
-            end
-          end
-          break if done
-        end
-        c
       end
     end
   end
 
   class Analysis(T)
-
-    @first = Hash(Node, Set(Node)).new do |hash, key|
-      hash[key] = Set(Node).new
-    end
-    @follow = Hash(NonTerminal, Set(Node)).new do |hash, key|
-      hash[key] = Set(Node).new
-    end
+    @first = Hash(Node, Set(Node)).new { |hash, key| hash[key] = Set(Node).new }
+    @follow = Hash(NonTerminal, Set(Node)).new { |hash, key| hash[key] = Set(Node).new }
     getter rules = Array(Production).new
     getter first, follow
 
@@ -271,54 +229,41 @@ module Parser
 
     def build(entrypoint : String) : Array(Automaton::State)
       e = add(ENTRYPOINT, entrypoint)
+
       populate_first
       populate_follow(e.result)
-      c = @builder.items(e)
       states = Array(Automaton::State).new
+
+      c = @builder.items(e)
       c.each_with_index do |i, j|
-        #~# puts "#{j.to_s.rjust 3}. #{i.join("\n     ")}"
         state = Automaton::State.new
         states << state
-        #~# actions = {} of Node => String
-        #~# gotos = {} of NonTerminal => String
-        i.each do |item|
-          if item == @builder.final(e)
-            state.add_action nil, nil
-            #~# puts "Accept!".colorize.green.bold
-            next
+
+        apply_goto = ->(node : Node) {
+          if transition_index = c.index @builder.goto(i, node)
+            state.add_action node, transition_index
           end
-          right_of_dot = item.body[item.dot]?
+        }
+
+        i.each do |item|
+          state.add_action(nil, nil) if item == @builder.final(e)
+          right_of_dot = item.right_of_dot?
           if right_of_dot.nil?
             left_of_dot = item.body[item.dot - 1]?
             unless left_of_dot.nil?
               unless item.production.result == e.result
                 @follow[item.production.result].each do |a|
                   state.add_action a, item.production
-                  #~# actions[a] = "Reduce #{item.production}"
                 end
               end
             end
-          else
-            if right_of_dot.is_a? Terminal || right_of_dot == EPSILON
-              transitioned_state = @builder.goto(i, right_of_dot)
-              if transition_index = c.index(transitioned_state)
-                state.add_action right_of_dot, transition_index
-                #~# actions[right_of_dot] = "State #{transition_index.to_s.rjust 3}."
-              end
-            end
+          elsif right_of_dot.is_a? Terminal || right_of_dot == EPSILON
+            apply_goto.call(right_of_dot)
           end
           all_symbols.select(NonTerminal).each do |k|
-            transitioned_state = @builder.goto(i, k)
-            if transition_index = c.index(transitioned_state)
-              state.add_action k, transition_index
-              #~# gotos[k] = "State #{transition_index.to_s.rjust 3}."
-            end
+            apply_goto.call(k)
           end
         end
-        #~# print actions.map { |ki, kj| "Action - upon #{ki.to_s.color_ljust 32} => #{kj}\n" }.join ""
-        #~# print gotos.map { |ki, kj| "  Goto - upon #{ki.to_s.color_ljust 32} => #{kj}\n" }.join ""
-        #~# puts "\n--"
-        #~# puts
       end
       states
     end
@@ -342,22 +287,25 @@ module Parser
       first x
     end
 
+    def first(*x : Node?) : Set(Node)
+      first x.to_a.compact
+    end
+
     def populate_first
       @first[EOS] = Set(Node){EOS}
       loop do
         done = true
         all_symbols.each do |x|
           s = case x
-          when Terminal then Set(Node){x}
-          when Production then x.body.epsilon? ? Set(Node){EPSILON} : Set(Node).new
-          when NonTerminal
+          in Terminal then Set(Node){x}
+          in NonTerminal
             running = @first[x].dup
             @rules.select(&.name.== x.name).each do |candidate|
               running += first(candidate.body.reject(DOT))
               running << EPSILON if candidate.epsilon?
             end
             running
-          else Set(Node).new
+          in Node then Set(Node).new
           end
           done = false if s != @first[x]
           @first[x] = s
@@ -395,10 +343,6 @@ module Parser
 
   def self.tok(symbol : Symbol, t : T) : {Symbol, T} forall T
     {symbol, t}
-  end
-
-  def self.tok(symbol : Symbol) : {Symbol, Nil}
-    {symbol, nil}
   end
 
   class Automaton(*T)
@@ -450,12 +394,8 @@ module Parser
     getter symbols = Array(Token(*T) | Reduced(*T)).new
     @input = Array(Token(*T)).new
 
-    def state_num : Int32
-      stack.last
-    end
-
     def state : State
-      @states[state_num]
+      @states[stack.last]
     end
 
     def add_state
@@ -479,7 +419,6 @@ module Parser
       top = @input.shift
       loop do
         a = top.t[0].nil? ? EOS : Terminal.new(top.t[0].not_nil!)
-        puts "Run: State nr. #{state_num}: #{state.actions}"
         if a == EOS && state.actions.has_key?(nil)
           return @symbols.pop
         end
@@ -494,45 +433,21 @@ module Parser
         case action
         when Int32
           @stack << action
-          @symbols << top unless matched_epsilon
-          puts "Shifted: #{@stack}"
-          puts "Symbols: #{@symbols}"
-          top = @input.shift unless matched_epsilon
+          next if matched_epsilon
+          @symbols << top
+          top = @input.shift
         when Production
           @stack.pop action.body.size
-          # reduction_args = @symbols.pop(action.epsilon? ? 0 : action.body.size)
           reduction_args = @symbols.pop(action.body.size)
-          puts "Popped for reducing to #{action.name}: #{reduction_args}"
           reduction_args.clear if action.epsilon?
           @stack << state.actions[NonTerminal.new(action.name)].as Int32
           @symbols << Reduced(*T).new({action.name, reduction_args})
-          puts "Reduced: #{@stack}"
-          puts "Symbols: #{@symbols}"
         end
       end
     end
   end
 
-  alias LR0Analysis = Analysis(LR0::Builder)
-  alias LR1Analysis = Analysis(LR1::Builder)
-
-  # puts "\n\n== LR(0) ==\n\n"
-  # gen = LR0Analysis.new
-  # gen.add("S", "C", "C")
-  # gen.add("C", :c, "C")
-  # gen.add("C", :d)
-  # gen.initial("S")
-
-  # gen.add("E", "E", :"+", "T")
-  # gen.add("E", "T")
-  # gen.add("T", "T", :"*", "F")
-  # gen.add("T", "F")
-  # gen.add("F", :"(", "E", :")")
-  # gen.add("F", :id)
-  # gen.initial("E")
-
-  puts "\n\n== LR(1) ==\n\n"
-  gen1 = LR1Analysis.new
+  gen1 = Analysis(LR0::Builder).new
   # gen1.add("S", "C", "C")
   # gen1.add("C", :c, "C")
   # gen1.add("C", :d)
