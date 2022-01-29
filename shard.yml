@@ -1,0 +1,9 @@
+name: lalr
+version: 0.1.0
+
+authors:
+  - Emilia Dreamer <emilia@rymiel.space>
+
+crystal: 1.3.0
+
+license: MIT
