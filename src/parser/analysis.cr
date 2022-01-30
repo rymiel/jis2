@@ -7,22 +7,6 @@ module Parser
     getter rules = Array(Production).new
     getter first, follow
 
-    class ProductionBuilder(T)
-      @name : String
-      @analysis : Analysis(T)
-      @body = Array(Node).new
-      def initialize(@analysis, @name)
-      end
-
-      def line(*items)
-        @analysis.add(@name, *items)
-      end
-
-      def empty
-        line
-      end
-    end
-
     def initialize
       @builder = uninitialized T
       @builder = T.new self
@@ -36,11 +20,6 @@ module Parser
 
     def all_symbols : Set(Node)
       @rules.map(&.result).to_set + @rules.map(&.body).flatten.to_set
-    end
-
-    def add(name : String, &)
-      builder = ProductionBuilder(T).new self, name
-      with builder yield
     end
 
     def add(name : String, *items) : Production
