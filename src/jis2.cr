@@ -16,7 +16,7 @@ macro build_parser(kind, entrypoint, &block)
             call_args = [] of Nil
             (1..100).each do # finite?
               if base.is_a? Call
-                if base.name == :>>
+                if base.name == :+
                   call_args.unshift base.args[0]
                   base = base.receiver
                 elsif base.name == :optional
@@ -56,29 +56,29 @@ end
 
 states = build_parser(LR0, "program") do
   Program         = Module
-  Module          = :r_module >> :string >> Statements >> :r_end
-  Statements      = optional Statements >> Statement
+  Module          = :r_module + :string + Statements + :r_end
+  Statements      = optional Statements + Statement
   Statement       = FunctionDef \
-                  | :r_return >> Expression >> :semi \
-                  | Expression >> :semi \
+                  | :r_return + Expression + :semi \
+                  | Expression + :semi \
                   | Block
-  Block           = BlockStatements >> :r_do >> Statements >> BlockFinally >> :r_end
-  BlockStatements = optional BlockStatements >> BlockStatement
-  BlockFinally    = optional :r_finally >> Statement
-  BlockStatement  = :r_given >> Expression \
-                  | :r_repeat >> Expression \
-                  | :r_until >> Expression
+  Block           = BlockStatements + :r_do + Statements + BlockFinally + :r_end
+  BlockStatements = optional BlockStatements + BlockStatement
+  BlockFinally    = optional :r_finally + Statement
+  BlockStatement  = :r_given + Expression \
+                  | :r_repeat + Expression \
+                  | :r_until + Expression
   Expression      = DecimalLiteral | :word | Declaration | Assignment | Call
   DecimalLiteral  = :number
-  Declaration     = DefinitionArg >> :assign >> Expression
-  Assignment      = :word >> :assign >> Expression
-  Call            = CallName >> :sq_l >> CallArgs >> :sq_r
+  Declaration     = DefinitionArg + :assign + Expression
+  Assignment      = :word + :assign + Expression
+  Call            = CallName + :sq_l + CallArgs + :sq_r
   CallName        = :word | :plus | :eq
-  CallArgs        = optional Expression | CallArgs >> :pipe >> Expression
+  CallArgs        = optional Expression | CallArgs + :pipe + Expression
   TypeSpecifier   = :tt_int
-  FunctionDef     = TypeSpecifier >> :r_func >> :word >> :sq_l >> DefinitionArgs >> :sq_r >> Statements >> :r_end
-  DefinitionArgs  = optional DefinitionArg | DefinitionArgs >> :pipe >> DefinitionArg
-  DefinitionArg   = TypeSpecifier >> :word
+  FunctionDef     = TypeSpecifier + :r_func + :word + :sq_l + DefinitionArgs + :sq_r + Statements + :r_end
+  DefinitionArgs  = optional DefinitionArg | DefinitionArgs + :pipe + DefinitionArg
+  DefinitionArg   = TypeSpecifier + :word
 end
 at = Parser::Automaton.new(states)
 
