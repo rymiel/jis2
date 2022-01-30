@@ -1,0 +1,79 @@
+require "colorize"
+require "./parser/lr0"
+require "./parser/lr1"
+require "./parser/analysis"
+require "./parser/automaton"
+
+class String
+  ANSI_REGEX = /\x1b\[[0-9;]*m/
+  def strip_color : String
+    self.gsub(ANSI_REGEX, "")
+  end
+  def color_ljust(n : Int32) : String
+    self.ljust(n + (self.size - strip_color.size))
+  end
+end
+
+def until_unchanged(obj : Enumerable, &)
+  old_size = obj.size
+  ret = nil
+  loop do
+    ret = yield
+    break if obj.size == old_size
+    old_size = obj.size
+  end
+  ret
+end
+
+module Parser
+  VERSION = "0.1.0"
+
+  abstract struct Node
+  end
+  record NonTerminal < Node, name : String do
+    def inspect(io : IO)
+      io << name.inspect.colorize.yellow
+    end
+  end
+  record Terminal < Node, symbol : Symbol do
+    def inspect(io : IO)
+      io << symbol.inspect.colorize.cyan
+    end
+  end
+  struct Dot
+    def inspect(io : IO)
+      io << "·".colorize.red.bold
+    end
+  end
+  struct Epsilon < Node
+    def inspect(io : IO)
+      io << "ɛ".colorize.red.bold
+    end
+  end
+  struct EndOfStream < Node
+    def inspect(io : IO)
+      io << "$".colorize.red.bold
+    end
+  end
+  DOT = Dot.new
+  EPSILON = Epsilon.new
+  EOS = EndOfStream.new
+  ENTRYPOINT = "ENTRYPOINT"
+
+  record Production, name : String, body : Array(Node) do
+    def inspect(io : IO)
+      io << smart_name << " -> " << @body.join " "
+    end
+    def smart_name : String
+      (name == ENTRYPOINT ? "*".colorize.bold.green : name.colorize.bold).to_s
+    end
+    def epsilon? : Bool
+      @body == [EPSILON]
+    end
+    def result : NonTerminal
+      NonTerminal.new @name
+    end
+  end
+
+  record Token(T), symbol : Symbol, object : T
+end
