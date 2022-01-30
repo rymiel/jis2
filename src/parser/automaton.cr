@@ -1,5 +1,7 @@
+require "../any"
+
 module Parser
-  class Automaton(*T)
+  class Automaton
     alias Target = Int32 | Production | Nil
     record State, actions : Hash(Node?, Target) do
       def initialize
@@ -19,23 +21,24 @@ module Parser
     def initialize(@states)
     end
 
-    record Token(*T), t : {Symbol?, Union(Nil, *T)} do
+    record Token, symbol : Symbol?, t : Any? do
       def inspect(io : IO)
-        io << "<" << t[0].colorize.cyan
-        unless (u = t[1]).nil?
-          io << " " << u
+        io << "<" << @symbol.colorize.cyan
+        unless @t.nil?
+          io << ":" << @t.not_nil!.@stored_type_name.colorize.dark_gray
+          io << " " << @t
         end
         io << ">"
       end
     end
-    record Reduced(*T), t : {String, Array(Token(*T) | Reduced(*T))} do
+    record Reduced, name : String, t : Array(Token | Reduced) do
       def inspect(io : IO)
-        io << t[0].colorize.yellow << "(" << t[1].join(", ") << ")"
+        io << @name.colorize.yellow << "(" << @t.join(", ") << ")"
       end
       def pretty_print(pp)
-        pp.text t[0].colorize.yellow.to_s
+        pp.text @name.colorize.yellow.to_s
         pp.surround(" {", "}", "", nil) do
-          t[1].each_with_index do |elem, i|
+          @t.each_with_index do |elem, i|
             pp.comma if i > 0
             elem.pretty_print(pp)
           end
@@ -45,8 +48,8 @@ module Parser
 
     getter states : Array(State)
     getter stack = [0]
-    getter symbols = Array(Token(*T) | Reduced(*T)).new
-    @input = Array(Token(*T)).new
+    getter symbols = Array(Token | Reduced).new
+    @input = Array(Token).new
 
     def state : State
       @states[stack.last]
@@ -59,20 +62,20 @@ module Parser
     end
 
     def <<(token : {Symbol, U}) forall U
-      @input << Token(*T).new token
+      @input << Token.new token[0], Any.new token[1]
       self
     end
 
     def <<(token : Symbol)
-      @input << Token(*T).new({token, nil})
+      @input << Token.new token, nil
       self
     end
 
     def run
-      @input << Token(*T).new({nil, nil})
+      @input << Token.new nil, nil
       top = @input.shift
       loop do
-        a = top.t[0].nil? ? EOS : Terminal.new(top.t[0].not_nil!)
+        a = top.symbol.nil? ? EOS : Terminal.new(top.symbol.not_nil!)
         if a == EOS && state.actions.has_key?(nil)
           return @symbols.pop
         end
@@ -95,7 +98,7 @@ module Parser
           reduction_args = @symbols.pop(action.body.size)
           reduction_args.clear if action.epsilon?
           @stack << state.actions[NonTerminal.new(action.name)].as Int32
-          @symbols << Reduced(*T).new({action.name, reduction_args})
+          @symbols << Reduced.new action.name, reduction_args
         end
       end
     end
