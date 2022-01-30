@@ -28,10 +28,10 @@ module Parser
       @builder = T.new self
     end
 
-    def self.build(&) : self
+    def self.build(entrypoint : String, &) : Array(Automaton::State)
       instance = new
       with instance yield
-      instance
+      instance.build entrypoint
     end
 
     def all_symbols : Set(Node)
