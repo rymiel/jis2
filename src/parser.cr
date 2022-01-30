@@ -42,7 +42,7 @@ module Parser
   end
   struct Dot
     def inspect(io : IO)
-      io << "·".colorize.red.bold
+      io << "·".colorize.magenta.bold
     end
   end
   struct Epsilon < Node
@@ -52,7 +52,7 @@ module Parser
   end
   struct EndOfStream < Node
     def inspect(io : IO)
-      io << "$".colorize.red.bold
+      io << "$".colorize.light_red.bold
     end
   end
   DOT = Dot.new
