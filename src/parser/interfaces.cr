@@ -4,6 +4,7 @@ module Parser
     abstract def singleton(entrypoint : Production, dot : Int32) : T
     abstract def initial(entrypoint : Production) : T
     abstract def closure(i : Set(T)) : Set(T)
+    abstract def make_reduction(item : T, & : T -> Nil)
 
     def initial(entrypoint : Production) : T
       singleton(entrypoint, 0)

@@ -14,6 +14,12 @@ module Parser::LR0
       Item.new e, dot
     end
 
+    def make_reduction(item : Item, &)
+      @analysis.@follow[item.production.result].each do |a|
+        yield a
+      end
+    end
+
     def closure(i : Set(Item)) : Set(Item)
       j = i.dup
       until_unchanged(j) do

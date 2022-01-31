@@ -1,7 +1,14 @@
 module Parser
 
   alias Action = Proc(Array(Any), Any?)
-  record ActionableProduction, production : Production, action : Action?
+  record ActionableProduction, production : Production, action : Action? do
+    def inspect(io : IO)
+      io << "["
+      @production.inspect io
+      io << "->()" unless @action.nil?
+      io << "]"
+    end
+  end
 
   class Analysis(T)
     @first = Hash(Node, Set(Node)).new { |hash, key| hash[key] = Set(Node).new }
@@ -68,7 +75,7 @@ module Parser
             left_of_dot = item.body[item.dot - 1]?
             unless left_of_dot.nil?
               unless item.production.result == e.result
-                @follow[item.production.result].each do |a|
+                @builder.make_reduction(item) do |a|
                   matching_rule = @rules.find(&.production.== item.production).not_nil!
                   state.add_action a, matching_rule
                 end

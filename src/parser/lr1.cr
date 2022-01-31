@@ -14,6 +14,10 @@ module Parser::LR1
       Item.new e, dot, EOS
     end
 
+    def make_reduction(item : Item, &)
+      yield item.lookahead
+    end
+
     def closure(i : Set(Item)) : Set(Item)
       j = i.dup
       until_unchanged(j) do
