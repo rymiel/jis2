@@ -119,8 +119,7 @@ macro build_parser(kind, entrypoint, &block)
             {% for b, bi in r %}
               {% if bi != 0 %}
                 {% if t = known_types[b] %}
-                  %any = %a[{{ bi - 1 }}]
-                  _{{ b.id.underscore }} = _{{ bi }} = (%any.value?({{ t }})) || (puts "ResolveFailure: #{{{ bi }}} ({{ t }}) of {{variants[0][0]}}, found #{%any.stored_type_name} instead"; next nil)
+                  _{{ b.id.underscore }} = _{{ bi }} = (%a[{{ bi - 1 }}].value?({{ t }})) || (puts "ResolveFailure: #{{{ bi }}} ({{ t }}) of {{variants[0][0]}}, found #{%a[{{ bi - 1 }}].stored_type_name} instead"; next nil)
                   {% found_indices << bi %}
                 {% end %}
               {% end %}
@@ -143,9 +142,14 @@ macro build_parser(kind, entrypoint, &block)
             {% elsif can_implicit_convert %}
               Any.new _1
             {% elsif return_type %}
-              ::desired(begin
-                {{ m.body }}
-              end, {{ return_type }})
+              {% if return_type.resolve.ancestors.includes?(Enum) && m.body.is_a?(SymbolLiteral) %}
+                %m_body = {{return_type}}.new({{ m.body }})
+              {% else %}
+                %m_body = begin
+                  {{ m.body }}
+                end
+              {% end %}
+              ::desired(%m_body, {{ return_type }})
             {% else %}
               {{ m.body }}
               nil
@@ -196,6 +200,21 @@ module JIS2
     end
   end
 
+  struct Optional(T)
+    @t : T?
+    def initialize(t : T)
+      @t = t
+    end
+
+    def initialize
+      @t = nil
+    end
+
+    def value : T?
+      @t
+    end
+  end
+
   abstract class Statement
   end
   abstract struct Expression
@@ -206,6 +225,11 @@ module JIS2
 
   record Declaration < Expression, type : TypeName, value : Ref(Expression)
   record DecimalLiteral < Expression, value : Int64
+
+  class Block < Statement
+    def initialize(@b_statements : Array(BlockStatement), @body : Array(Statement), @finally : Statement?)
+    end
+  end
 
   class Module
     def initialize(@name : String)
@@ -226,20 +250,19 @@ states = build_parser(LR1, Program) do
   type BlockStatement, JIS2::BlockStatement
   type DecimalLiteral, JIS2::DecimalLiteral
   type Declaration, JIS2::Declaration
+  type BlockFinally, JIS2::Optional(JIS2::Statement)
+  type Block, JIS2::Block
+  type ExprBlkStatKind, JIS2::BlockStatementKind
 
   Program         = Module
   Module          = (:r_module + :string + Statements + :r_end).do { JIS2::Module.new _string }
   Statements      = Statement[]
-  Statement       = FunctionDef \
-                  | :r_return + Expression + :semi \
-                  | Expression + :semi \
-                  | Block
-  Block           = BlockStatements + :r_do + Statements + BlockFinally + :r_end
+  Statement       = FunctionDef | :r_return + Expression + :semi | Expression + :semi | Block
+  Block           = (BlockStatements + :r_do + Statements + BlockFinally + :r_end).do { JIS2::Block.new _1, _3, _4.value }
   BlockStatements = BlockStatement[]
-  BlockFinally    = optional(:r_finally + Statement)
-  BlockStatement  = (:r_given + Expression).do { JIS2::ExpressionBlockStatement.new(:given, _2) } \
-                  | (:r_repeat + Expression).do { JIS2::ExpressionBlockStatement.new(:repeat, _2) } \
-                  | (:r_until + Expression).do { JIS2::ExpressionBlockStatement.new(:until, _2) }
+  BlockFinally    = optional(:r_finally + Statement).do { JIS2::Optional.new _statement }
+  BlockStatement  = (ExprBlkStatKind + Expression).do { JIS2::ExpressionBlockStatement.new(_expr_blk_stat_kind, _expression) }
+  ExprBlkStatKind = :r_given.do { :given } | :r_repeat.do { :repeat } | :r_until.do { :until }
   Expression      = DecimalLiteral | :word | Declaration | Assignment | Call
   DecimalLiteral  = :number.do { JIS2::DecimalLiteral.new _number }
   Declaration     = (DefinitionArg + :assign + Expression).do { JIS2::Declaration.new _definition_arg, _expression.ref }
@@ -247,7 +270,7 @@ states = build_parser(LR1, Program) do
   Call            = CallName + :sq_l + CallArgs + :sq_r
   CallName        = :word | :plus | :eq
   CallArgs        = Expression[:pipe]
-  TypeSpecifier   = (:tt_int).do { JIS2::PrimitiveType::Integer }
+  TypeSpecifier   = (:tt_int).do { :integer }
   FunctionDef     = TypeSpecifier + :r_func + :word + :sq_l + DefinitionArgs + :sq_r + Statements + :r_end
   DefinitionArgs  = DefinitionArg[:pipe]
   DefinitionArg   = (TypeSpecifier + :word).do { JIS2::TypeName.new _type_specifier, _word }
