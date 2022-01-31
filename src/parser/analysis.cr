@@ -1,10 +1,12 @@
 module Parser
 
+  alias Action = Proc(Array(Any), Any?)
+  record ActionableProduction, production : Production, action : Action?
 
   class Analysis(T)
     @first = Hash(Node, Set(Node)).new { |hash, key| hash[key] = Set(Node).new }
     @follow = Hash(NonTerminal, Set(Node)).new { |hash, key| hash[key] = Set(Node).new }
-    getter rules = Array(Production).new
+    getter rules = Array(ActionableProduction).new
     getter first, follow
 
     def initialize
@@ -19,10 +21,10 @@ module Parser
     end
 
     def all_symbols : Set(Node)
-      @rules.map(&.result).to_set + @rules.map(&.body).flatten.to_set
+      @rules.map(&.production.result).to_set + @rules.map(&.production.body).flatten.to_set
     end
 
-    def add(name : String, *items) : Production
+    def add(name : String, *items, action : Action? = nil) : ActionableProduction
       mapped = items.to_a.map { |i|
         x = case i
         when String then NonTerminal.new i
@@ -33,12 +35,17 @@ module Parser
       }
       mapped = [EPSILON] of Node if mapped.empty?
       production = Production.new name, mapped
-      @rules << production
-      production
+      actionable = ActionableProduction.new production, action
+      @rules << actionable
+      actionable
+    end
+
+    def add(name : String, *items, &block : Action) : ActionableProduction
+      add(name, *items, action: block)
     end
 
     def build(entrypoint : String) : Array(Automaton::State)
-      e = add(ENTRYPOINT, entrypoint)
+      e = add(ENTRYPOINT, entrypoint).production
 
       populate_first
       populate_follow(e.result)
@@ -62,7 +69,8 @@ module Parser
             unless left_of_dot.nil?
               unless item.production.result == e.result
                 @follow[item.production.result].each do |a|
-                  state.add_action a, item.production
+                  matching_rule = @rules.find(&.production.== item.production).not_nil!
+                  state.add_action a, matching_rule
                 end
               end
             end
@@ -109,7 +117,7 @@ module Parser
           in Terminal then Set(Node){x}
           in NonTerminal
             running = @first[x].dup
-            @rules.select(&.name.== x.name).each do |candidate|
+            @rules.map(&.production).select(&.name.== x.name).each do |candidate|
               running += first(candidate.body.reject(DOT))
               running << EPSILON if candidate.epsilon?
             end
@@ -129,7 +137,7 @@ module Parser
         all_symbols.select(NonTerminal).each do |x|
           running = @follow[x].dup
           running << EOS if x == entrypoint
-          @rules.each do |i|
+          @rules.map(&.production).each do |i|
             body = i.body.reject(DOT)
             self_index = body.index x
             next if self_index.nil?

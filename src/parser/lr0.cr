@@ -19,7 +19,7 @@ module Parser::LR0
       until_unchanged(j) do
         j.each do |item|
           if (r = item.right_of_dot?).is_a? NonTerminal
-            @analysis.@rules.select(&.name.== r.name).each do |production|
+            @analysis.@rules.map(&.production).select(&.name.== r.name).each do |production|
               j << Item.new production, 0
             end
           end

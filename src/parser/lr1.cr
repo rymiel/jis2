@@ -1,6 +1,6 @@
 require "./interfaces"
 
-module Parser::R1
+module Parser::LR1
   record Item < IItem, production : Production, dot : Int32, lookahead : Node do
     def inspect(io : IO)
       io << "[" << @production.smart_name << " -> " << body_with_dot.join(" ") << "; " << lookahead << "]"
@@ -20,7 +20,7 @@ module Parser::R1
         j.each do |item|
           if (r = item.right_of_dot?).is_a? NonTerminal
             r2 = item.body[item.dot + 1]?
-            @analysis.@rules.select(&.name.== r.name).each do |production|
+            @analysis.@rules.map(&.production).select(&.name.== r.name).each do |production|
               compound_first = @analysis.first(r2, item.lookahead)
               compound_first.each do |b|
                 j << Item.new production, 0, b

@@ -2,13 +2,14 @@ require "../any"
 
 module Parser
   class Automaton
-    alias Target = Int32 | Production | Nil
+    alias Target = Int32 | ActionableProduction | Nil
     record State, actions : Hash(Node?, Target) do
       def initialize
         @actions = Hash(Node?, Target).new
       end
 
       def add_action(node : Node?, target)
+        target = ActionableProduction.new target, nil if target.is_a? Production
         if @actions.has_key?(node)
           if @actions[node] != (target.as Target)
             raise "Conflict on #{node} action: #{@actions[node]} vs #{target}"
@@ -21,34 +22,12 @@ module Parser
     def initialize(@states)
     end
 
-    record Token, symbol : Symbol?, t : Any? do
-      def inspect(io : IO)
-        io << "<" << @symbol.colorize.cyan
-        unless @t.nil?
-          io << ":" << @t.not_nil!.@stored_type_name.colorize.dark_gray
-          io << " " << @t
-        end
-        io << ">"
-      end
-    end
-    record Reduced, name : String, t : Array(Token | Reduced) do
-      def inspect(io : IO)
-        io << @name.colorize.yellow << "(" << @t.join(", ") << ")"
-      end
-      def pretty_print(pp)
-        pp.text @name.colorize.yellow.to_s
-        pp.surround(" {", "}", "", nil) do
-          @t.each_with_index do |elem, i|
-            pp.comma if i > 0
-            elem.pretty_print(pp)
-          end
-        end
-      end
-    end
+    record Token, symbol : Symbol?, t : Any?
+    record Reduced, name : String, t : Array(Any)
 
     getter states : Array(State)
     getter stack = [0]
-    getter symbols = Array(Token | Reduced).new
+    getter symbols = Array(Any).new
     @input = Array(Token).new
 
     def state : State
@@ -88,17 +67,20 @@ module Parser
         end
         puts "Input: #{top} => action #{action}"
         case action
-        when Int32
+        in Int32
           @stack << action
           next if matched_epsilon
-          @symbols << top
+          @symbols << ((top.try &.t) || Any.new top)
           top = @input.shift
-        when Production
-          @stack.pop action.body.size
-          reduction_args = @symbols.pop(action.body.size)
-          reduction_args.clear if action.epsilon?
-          @stack << state.actions[NonTerminal.new(action.name)].as Int32
-          @symbols << Reduced.new action.name, reduction_args
+        in ActionableProduction
+          prod = action.production
+          @stack.pop prod.body.size
+          reduction_args = @symbols.pop(prod.epsilon? ? 0 : prod.body.size)
+          action_result = action.action.try &.call(reduction_args)
+          action_result ||= Any.new Reduced.new prod.name, reduction_args
+          @stack << state.actions[NonTerminal.new(prod.name)].as Int32
+          @symbols << action_result
+        in Nil
         end
       end
     end
