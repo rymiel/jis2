@@ -28,7 +28,7 @@ macro build_parser(kind, entrypoint, &block)
           r = i.value.receiver
           if known_receiver = known_types[r.is_a?(Path) ? r.names[0].underscore.stringify : r]
             j = i.target
-            known_types[j.is_a?(Path) ? j.names[0].underscore.stringify : j] = parse_type("Array(#{known_receiver})")
+            known_types[j.is_a?(Path) ? j.names[0].underscore.stringify : j] = "Array(#{known_receiver})".id
           end
         end
       end
@@ -107,7 +107,7 @@ macro build_parser(kind, entrypoint, &block)
           m = methods[ri]
           return_type = known_types[r[0]]
           can_implicit_convert = false
-          if return_type && r.size == 2 && (implicit = known_types[r[1]])
+          if return_type && return_type.is_a?(Path) && r.size == 2 && (implicit = known_types[r[1]])
             can_implicit_convert = return_type.resolve >= implicit.resolve
           end
         %}
@@ -200,7 +200,7 @@ module JIS2
     end
   end
 
-  struct Optional(T)
+  struct Opt(T)
     @t : T?
     def initialize(t : T)
       @t = t
@@ -231,36 +231,42 @@ module JIS2
     end
   end
 
+  class FunctionDefinition < Statement
+    def initialize(@return_type : Type, @name : String, @args : Array(TypeName), @body : Array(Statement))
+    end
+  end
+
   class Module
-    def initialize(@name : String)
+    def initialize(@name : String, @body : Array(Statement))
     end
   end
 end
 
 states = build_parser(LR1, Program) do
-  type :string,       String
-  type :word,         String
-  type :number,       Int64
-  type TypeSpecifier, JIS2::Type
-  type Program,       JIS2::Module
-  type Module,        JIS2::Module
-  type Statement,     JIS2::Statement
-  type Expression,     JIS2::Expression
-  type DefinitionArg, JIS2::TypeName
-  type BlockStatement, JIS2::BlockStatement
-  type DecimalLiteral, JIS2::DecimalLiteral
-  type Declaration, JIS2::Declaration
-  type BlockFinally, JIS2::Optional(JIS2::Statement)
-  type Block, JIS2::Block
+  type :string,         String
+  type :word,           String
+  type :number,         Int64
+  type TypeSpecifier,   JIS2::Type
+  type Program,         JIS2::Module
+  type Module,          JIS2::Module
+  type Statement,       JIS2::Statement
+  type Expression,      JIS2::Expression
+  type DefinitionArg,   JIS2::TypeName
+  type BlockStatement,  JIS2::BlockStatement
+  type DecimalLiteral,  JIS2::DecimalLiteral
+  type Declaration,     JIS2::Declaration
+  type BlockFinally,    JIS2::Opt(JIS2::Statement)
+  type Block,           JIS2::Block
   type ExprBlkStatKind, JIS2::BlockStatementKind
+  type FunctionDef,     JIS2::FunctionDefinition
 
   Program         = Module
-  Module          = (:r_module + :string + Statements + :r_end).do { JIS2::Module.new _string }
+  Module          = (:r_module + :string + Statements + :r_end).do { JIS2::Module.new _string, _statements }
   Statements      = Statement[]
   Statement       = FunctionDef | :r_return + Expression + :semi | Expression + :semi | Block
   Block           = (BlockStatements + :r_do + Statements + BlockFinally + :r_end).do { JIS2::Block.new _1, _3, _4.value }
   BlockStatements = BlockStatement[]
-  BlockFinally    = optional(:r_finally + Statement).do { JIS2::Optional.new _statement }
+  BlockFinally    = optional(:r_finally + Statement).do { JIS2::Opt.new _statement }
   BlockStatement  = (ExprBlkStatKind + Expression).do { JIS2::ExpressionBlockStatement.new(_expr_blk_stat_kind, _expression) }
   ExprBlkStatKind = :r_given.do { :given } | :r_repeat.do { :repeat } | :r_until.do { :until }
   Expression      = DecimalLiteral | :word | Declaration | Assignment | Call
@@ -271,57 +277,11 @@ states = build_parser(LR1, Program) do
   CallName        = :word | :plus | :eq
   CallArgs        = Expression[:pipe]
   TypeSpecifier   = (:tt_int).do { :integer }
-  FunctionDef     = TypeSpecifier + :r_func + :word + :sq_l + DefinitionArgs + :sq_r + Statements + :r_end
+  FunctionDef     = (TypeSpecifier + :r_func + :word + :sq_l + DefinitionArgs + :sq_r + Statements + :r_end).do { JIS2::FunctionDefinition.new _1, _3, _5, _7 }
   DefinitionArgs  = DefinitionArg[:pipe]
   DefinitionArg   = (TypeSpecifier + :word).do { JIS2::TypeName.new _type_specifier, _word }
 end
-pp! states.size
 at = Parser::Automaton.new(states)
-
-class TreeWalker(*T)
-  record Token(*T), symbol : Symbol?, t : Array(Union(Any, Token(*T), Reduced(*T), *T)?) do
-    def inspect(io : IO)
-      io << "<" << @symbol.colorize.cyan
-      u = @t[0]
-      if u.is_a?(Any)
-        io << ":" << u.not_nil!.stored_type_name.colorize.dark_gray
-        io << " " << u
-      elsif !u.nil?
-        io << " " << u
-      end
-      io << ">"
-    end
-  end
-  record Reduced(*T), name : String, t : Array(Union(Any, Token(*T), Reduced(*T), *T)) do
-    def pretty_print(pp)
-      pp.text @name.colorize.yellow.to_s
-      pp.surround(" {", "}", "", nil) do
-        @t.each_with_index do |elem, i|
-          pp.comma if i > 0
-          elem.pretty_print(pp)
-        end
-      end
-    end
-  end
-  alias AReduced = Parser::Automaton::Reduced
-  alias AToken = Parser::Automaton::Token
-  def walk(any : Any) : Union(Any, Token(*T), Reduced(*T), *T)
-    {% begin %}
-      if r = any.value?(AReduced)
-        Reduced(*T).new r.name, r.t.map { |i| self.walk(i).as(Union(Any, Token(*T), Reduced(*T), *T)) }
-      elsif t = any.value?(AToken)
-        Token(*T).new t.symbol, [t.t.try { |i| self.walk(i).as(Union(Any, Token(*T), Reduced(*T), *T)) }]
-      {% for i in @type.type_vars[0] %}
-        {% check_type = i.resolve %}
-        elsif %i = any.value?({{ check_type }})
-          %i
-      {% end %}
-      else
-        any
-      end
-    {% end %}
-  end
-end
 
 at << :r_module << tok(:string, "default")
   at << :tt_int << :r_func << tok(:word, "collatz") << :sq_l
@@ -331,5 +291,5 @@ at << :r_module << tok(:string, "default")
   at << :r_end
 at << :r_end
 tree = at.run
-PrettyPrint.format(TreeWalker(Array(JIS2::Statement), Array(JIS2::TypeName), Array(JIS2::BlockStatement), JIS2::TypeName, JIS2::Module, String, JIS2::PrimitiveType).new.walk(tree), STDOUT, 119)
+PrettyPrint.format(tree.value(JIS2::Module), STDOUT, 119)
 puts
