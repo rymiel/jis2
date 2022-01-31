@@ -1,36 +1,48 @@
 struct Any
+  @@known_type_names = {} of Int32 => String
   @object : Void*
   @stored_type : Int32
-  @stored_type_name : String
-  @to_s_proc : Proc(IO, Nil)
-  @inspect_proc : Proc(IO, Nil)
 
-  def initialize(obj)
+  def stored_type_name : String
+    @@known_type_names[@stored_type]
+  end
+
+  def initialize(obj : T) forall T
     @object = Box.box obj
-    @stored_type = obj.class.crystal_type_id
-    @stored_type_name = obj.class.to_s
-    @to_s_proc = ->obj.to_s(IO)
-    @inspect_proc = ->obj.inspect(IO)
+    @stored_type = obj.crystal_type_id
+    @@known_type_names[@stored_type] = obj.class.name
   end
 
   def value(t : T.class) : T forall T
-    if t.crystal_type_id != @stored_type
-      raise "This Any is holding an instance of #{@stored_type_name}, not #{t}"
+    {% begin %}
+    if t.crystal_instance_type_id == @stored_type
+      return Box(T).unbox @object
+    {% for i in T.all_subclasses %}
+    elsif {{i}}.crystal_instance_type_id == @stored_type
+      return Box({{ i }}).unbox @object
+    {% end %}
     end
-    return Box(T).unbox @object
+    {% end %}
+    raise "This Any is holding an instance of #{stored_type_name}, not #{t}"
   end
 
-  def to_s(io : IO)
-    @to_s_proc.call(io)
+  def value?(t : T.class) : T? forall T
+    {% begin %}
+    if t.crystal_instance_type_id == @stored_type
+      return Box(T).unbox @object
+    {% for i in T.all_subclasses %}
+    elsif {{i}}.crystal_instance_type_id == @stored_type
+      return Box({{ i }}).unbox @object
+    {% end %}
+    end
+    {% end %}
+    nil
   end
 
   def inspect(io : IO)
     io << "#<Any"
-    # object_id.to_s(io, 16)
-    io << "(" << @stored_type_name << ":" << @stored_type << "):"
+    io << "(" << stored_type_name << ":" << @stored_type << "):"
     @object.address.to_s(io, 16)
-    io << " "
-    @inspect_proc.call(io)
     io << ">"
   end
 end
