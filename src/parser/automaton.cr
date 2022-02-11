@@ -1,4 +1,4 @@
-require "../any"
+require "any"
 
 module Parser
   class Automaton

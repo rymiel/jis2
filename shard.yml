@@ -4,6 +4,10 @@ version: 0.1.0
 authors:
   - Emilia Dreamer <emilia@rymiel.space>
 
+dependencies:
+  any:
+    gitlab: rymiel/any
+
 crystalline:
   main: src/jis2.cr
 
