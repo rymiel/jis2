@@ -54,7 +54,7 @@ module Node
     end
   end
 
-  macro structure(*t, given_target = nil)
+  macro rule(*t, given_target = nil)
     {% for i in t %}
       {% if i.is_a? Call %}
         @[::Node::RuleNode(obj: {{ i.receiver }}, target: {{ i.args[0] }})]
@@ -231,6 +231,7 @@ module JIS2
   enum PrimitiveType
     Integer
   end
+
   @[Node::EnumVal(
     given: :r_given,
     repeat: :r_repeat,
@@ -241,10 +242,12 @@ module JIS2
     Repeat
     Until
   end
+
   alias Type = PrimitiveType
+
   record TypeName, type : Type, name : String do
     include Node
-    structure @type, :word >> @name
+    rule @type, :word >> @name
   end
 
   abstract class Statement
@@ -256,23 +259,25 @@ module JIS2
   abstract struct BlockStatement
     include Node
   end
+
   record ExpressionBlockStatement < BlockStatement, kind : BlockStatementKind, value : Expression do
     include Node
-    structure @kind, @value
+    rule @kind, @value
   end
 
   record Declaration < Expression, type : TypeName, value : Ref(Expression) do
     include Node
-    structure @type, :assign, @value
+    rule @type, :assign, @value
   end
+
   record DecimalLiteral < Expression, value : Int64 do
     include Node
-    structure :number >> @value
+    rule :number >> @value
   end
 
   record Finally, statement : Statement do
     include Node
-    structure :r_finally, @statement
+    rule :r_finally, @statement
   end
 
   class Block < Statement
@@ -281,7 +286,7 @@ module JIS2
     getter body : Array(Statement)
     getter finally : Finally?
 
-    structure @b_statements, :r_do, @body, @finally, :r_end
+    rule @b_statements, :r_do, @body, @finally, :r_end
 
     def initialize(@b_statements, @body, @finally)
     end
@@ -295,7 +300,7 @@ module JIS2
     getter args : Array(TypeName)
     getter body : Array(Statement)
 
-    structure @return_type, :r_func, :word >> @name, :sq_l, @args, :sq_r, @body, :r_end
+    rule @return_type, :r_func, :word >> @name, :sq_l, @args, :sq_r, @body, :r_end
 
     def initialize(@return_type, @name, @args, @body)
     end
@@ -307,7 +312,7 @@ module JIS2
     getter name : String
     getter body : Array(Statement)
 
-    structure :r_module, :string >> @name, @body, :r_end
+    rule :r_module, :string >> @name, @body, :r_end
 
     def initialize(@name, @body)
     end
