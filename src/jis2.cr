@@ -83,9 +83,16 @@ module Node
               rule_args = [i]
               resolves = [] of Nil
               m.annotations(::Node::RuleNode).each_with_index do |a, j|
-                rule_args << a[:obj]
-                if a[:target]
-                  target = i.instance_vars.find(&.name.== a[:target].name[1..])
+                a_obj = a[:obj]
+                a_target = a[:target]
+                if a_obj.is_a? InstanceVar
+                  matching_metavar = i.instance_vars.find(&.name.== a_obj.name[1..])
+                  a_target = a_obj
+                  a_obj = matching_metavar.type
+                end
+                rule_args << a_obj
+                if a_target
+                  target = i.instance_vars.find(&.name.== a_target.name[1..])
                   target_type = target.type
                   target_name = target.name
                   if target_type.union?
@@ -159,6 +166,10 @@ module Node
           elsif j.is_a? TypeNode
             sj = if j <= ::Array
                    j.type_vars[0].name(generic_args: false).split("::").last.underscore + "s"
+                 elsif j <= ::Ref
+                   j.type_vars[0].name(generic_args: false).split("::").last.underscore
+                 elsif j.union_types.includes?(::Nil)
+                   "opt_#{j.union_types.find(&.!= ::Nil).name(generic_args: false).split("::").last.underscore.id}"
                  else
                    j.name(generic_args: false).split("::").last.underscore
                  end
@@ -228,7 +239,7 @@ module JIS2
   alias Type = PrimitiveType
   record TypeName, type : Type, name : String do
     include Node
-    structure Type >> @type, :word >> @name
+    structure @type, :word >> @name
   end
 
   abstract class Statement
@@ -242,12 +253,12 @@ module JIS2
   end
   record ExpressionBlockStatement < BlockStatement, kind : BlockStatementKind, value : Expression do
     include Node
-    structure BlockStatementKind >> @kind, Expression >> @value
+    structure @kind, @value
   end
 
   record Declaration < Expression, type : TypeName, value : Ref(Expression) do
     include Node
-    structure TypeName >> @type, :assign, Expression >> @value
+    structure @type, :assign, @value
   end
   record DecimalLiteral < Expression, value : Int64 do
     include Node
@@ -256,7 +267,7 @@ module JIS2
 
   record Finally, statement : Statement do
     include Node
-    structure :r_finally, Statement >> @statement
+    structure :r_finally, @statement
   end
 
   class Block < Statement
@@ -265,7 +276,7 @@ module JIS2
     getter body : Array(Statement)
     getter finally : Finally?
 
-    structure BlockStatements >> @b_statements, :r_do, Statements >> @body, OptFinally >> @finally, :r_end
+    structure @b_statements, :r_do, @body, @finally, :r_end
 
     def initialize(@b_statements, @body, @finally)
     end
@@ -279,7 +290,7 @@ module JIS2
     getter args : Array(TypeName)
     getter body : Array(Statement)
 
-    structure Type >> @return_type, :r_func, :word >> @name, :sq_l, DefinitionArgs >> @args, :sq_r, Statements >> @body, :r_end
+    structure @return_type, :r_func, :word >> @name, :sq_l, DefinitionArgs >> @args, :sq_r, @body, :r_end
 
     def initialize(@return_type, @name, @args, @body)
     end
@@ -291,7 +302,7 @@ module JIS2
     getter name : String
     getter body : Array(Statement)
 
-    structure :r_module, :string >> @name, Statements >> @body, :r_end
+    structure :r_module, :string >> @name, @body, :r_end
 
     def initialize(@name, @body)
     end
