@@ -27,6 +27,13 @@ module JIS2
     Until
   end
 
+  @[AST::EnumVal(
+    equal: :"="
+  )]
+  enum Operator
+    Equal
+  end
+
   alias Type = PrimitiveType
 
   record TypeName, type : Type, name : String do
@@ -62,9 +69,36 @@ module JIS2
     rule @type, :":=", @value
   end
 
-  record DecimalLiteral < Expression, value : Int64 do
+  struct DecimalLiteral < Expression
     include AST
+    getter value : Int64
     rule :_number >> @value
+    def initialize(@value)
+      p! @value
+    end
+  end
+
+  record VariableLiteral < Expression, name : String do
+    include AST
+    rule :_word >> @name
+  end
+
+  struct Call < Expression
+    include AST
+    getter name : String
+    @[Separator(:"|", name: CallArgs)]
+    getter args : Array(Expression)
+
+    rule :_word >> @name, :"[", @args, :"]"
+    rule ::JIS2::Operator =~ @name, :"[", @args, :"]"
+
+    def initialize(@name, @args)
+    end
+    def initialize(name operator : Operator, @args)
+      @name = case operator
+      in .equal? then "="
+      end
+    end
   end
 
   record Finally, statement : Statement do
@@ -88,7 +122,7 @@ module JIS2
     include AST
     getter return_type : Type
     getter name : String
-    @[Separator(:pipe, name: DefinitionArgs)]
+    @[Separator(:"|", name: DefinitionArgs)]
     getter args : Array(TypeName)
     getter body : Array(Statement)
 
@@ -163,6 +197,7 @@ class Lexer(*T)
       next if @matches.each do |m, sym, r|
         if match = m.match(input, pos, Regex::Options::ANCHORED)
           r = r.call match if r.is_a? Proc
+          p! r
           at << (r.nil? ? sym : {sym, r})
           pos = match.end
           break true
@@ -175,9 +210,9 @@ class Lexer(*T)
 end
 
 lexer = Lexer(String, Int64).build do
-  match :module, :func, :do, :end, :given
+  match :module, :func, :do, :end, :given, :until, :repeat
   match /∇/, :tt_int
-  match :"[", :"]", :":="
+  match :"[", :"]", :":=", :"=", :"|"
   match /"([^"]*)"/, :_string, &.[1]
   match /!(\d+)/, :_number, &.[1].to_i64
   match /[a-z]+/, :_word, &.[0]
@@ -187,7 +222,8 @@ end
 input = <<-JIS2
 module "default"
   ∇ func collatz[∇ num]
-    given ∇ a := !1 do
+    given ∇ a := !1
+    until =[a|!2] do
     end
   end
 end
