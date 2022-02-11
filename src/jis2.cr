@@ -17,9 +17,9 @@ module JIS2
   end
 
   @[AST::EnumVal(
-    given: :r_given,
-    repeat: :r_repeat,
-    until: :r_until
+    given: :given,
+    repeat: :repeat,
+    until: :until
   )]
   enum BlockStatementKind
     Given
@@ -31,7 +31,7 @@ module JIS2
 
   record TypeName, type : Type, name : String do
     include AST
-    rule @type, :word >> @name
+    rule @type, :_word >> @name
 
     def inspect(io : IO)
       io << "JIS2::TypeName("
@@ -59,17 +59,17 @@ module JIS2
 
   record Declaration < Expression, type : TypeName, value : Ref(Expression) do
     include AST
-    rule @type, :assign, @value
+    rule @type, :":=", @value
   end
 
   record DecimalLiteral < Expression, value : Int64 do
     include AST
-    rule :number >> @value
+    rule :_number >> @value
   end
 
   record Finally, statement : Statement do
     include AST
-    rule :r_finally, @statement
+    rule :finally, @statement
   end
 
   class Block < Statement
@@ -78,7 +78,7 @@ module JIS2
     getter body : Array(Statement)
     getter finally : Finally?
 
-    rule @b_statements, :r_do, @body, @finally, :r_end
+    rule @b_statements, :do, @body, @finally, :end
 
     def initialize(@b_statements, @body, @finally)
     end
@@ -92,7 +92,7 @@ module JIS2
     getter args : Array(TypeName)
     getter body : Array(Statement)
 
-    rule @return_type, :r_func, :word >> @name, :sq_l, @args, :sq_r, @body, :r_end
+    rule @return_type, :func, :_word >> @name, :"[", @args, :"]", @body, :end
 
     def initialize(@return_type, @name, @args, @body)
     end
@@ -104,7 +104,7 @@ module JIS2
     getter name : String
     getter body : Array(Statement)
 
-    rule :r_module, :string >> @name, @body, :r_end
+    rule :module, :_string >> @name, @body, :end
 
     def initialize(@name, @body)
     end
@@ -128,6 +128,18 @@ class Lexer(*T)
 
   def match(regex : Regex, result : Symbol)
     @matches << {regex, result, nil}
+  end
+
+  def match(*symbols : Symbol)
+    symbols.each do |symbol|
+      @matches << {Regex.new(Regex.escape symbol.to_s), symbol, nil}
+    end
+  end
+
+  macro keywords(*kws)
+    {% for kw in kws %}
+      match(Regex.new(Regex.escape({{kw}}.to_s)), {{"kw_#{kw.id}".id.symbolize}})
+    {% end %}
   end
 
   def match(regex : Regex, symbol : Symbol, &result : Regex::MatchData -> Union(*T))
@@ -174,18 +186,12 @@ class Lexer(*T)
 end
 
 lexer = Lexer(String, Int64).build do
-  match /module/, :r_module
-  match /func/, :r_func
-  match /do/, :r_do
-  match /end/, :r_end
-  match /given/, :r_given
+  match :module, :func, :do, :end, :given
   match /∇/, :tt_int
-  match /\[/, :sq_l
-  match /\]/, :sq_r
-  match /:=/, :assign
-  match /"([^"]*)"/, :string, &.[1]
-  match /!(\d+)/, :number, &.[1].to_i64
-  match /[a-z]+/, :word, &.[0]
+  match :"[", :"]", :":="
+  match /"([^"]*)"/, :_string, &.[1]
+  match /!(\d+)/, :_number, &.[1].to_i64
+  match /[a-z]+/, :_word, &.[0]
   skip /\s+/
 end
 
@@ -198,17 +204,8 @@ module "default"
 end
 JIS2
 
-pp! lexer
 lexer.lex(input, at)
 
-pp! at.@input
-# at << :r_module << tok(:string, "default")
-  # at << :tt_int << :r_func << tok(:word, "collatz") << :sq_l
-    # at << :tt_int << tok(:word, "num")
-  # at << :sq_r
-    # at << :r_given << :tt_int << tok(:word, "a") << :assign << tok(:number, 1i64) << :r_do << :r_end
-  # at << :r_end
-# at << :r_end
 tree = at.run
 PrettyPrint.format(tree.value(JIS2::Module), STDOUT, 119)
 puts
