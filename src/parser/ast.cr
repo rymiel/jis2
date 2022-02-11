@@ -125,41 +125,48 @@ module Parser::AST
         end
         spider = spider.uniq
       %}
-      {% puts spider.map { |i| "#{i[0]}:#{" (#{i[3]})".id if i[3]}\n  args: #{i[1]}\n  resolve: #{i[2].map { |j| "\n    [#{j[0]}] = #{j[1]} : #{j[2]}" }.join("").id}\n\n" }.join("") %}
       {% for x in spider %}
-        {% i, args, resolve, meta = x %}
-        {% is_alias = meta == :alias %}
-        {% is_enum = meta == :enum %}
-        {% is_array = i.is_a? TypeNode && i <= ::Array %}
-        {% is_ref = i.is_a? TypeNode && i <= ::Parser::Ref %}
-        {% is_optional = meta == :optional %}
-        {% args = args.map_with_index { |j, ji|
-          if j.is_a? Path
-            j.names.last.underscore.stringify
-          elsif j.is_a? TypeNode
-            sj = if j <= ::Array
-                   j.type_vars[0].name(generic_args: false).split("::").last.underscore + "s"
-                 elsif j <= ::Parser::Ref
-                   j.type_vars[0].name(generic_args: false).split("::").last.underscore
-                 elsif j.union_types.includes?(::Nil)
-                   "opt_#{j.union_types.find(&.!= ::Nil).name(generic_args: false).split("::").last.underscore.id}"
-                 else
-                   j.name(generic_args: false).split("::").last.underscore
-                 end
-            sj = "opt_#{sj.id}" if is_optional && ji == 0
-            sj
-          else
-            j
-          end
-        } %}
+        {%
+          i, args, resolve, meta = x
+          is_alias = meta == :alias
+          is_enum = meta == :enum
+          is_array = i.is_a? TypeNode && i <= ::Array
+          is_ref = i.is_a? TypeNode && i <= ::Parser::Ref
+          is_optional = meta == :optional
+          args = args.map_with_index { |j, ji|
+            if j.is_a? Path
+              j.names.last.underscore.stringify
+            elsif j.is_a? TypeNode
+              sj = if j <= ::Array
+                    j.type_vars[0].name(generic_args: false).split("::").last.underscore + "s"
+                  elsif j <= ::Parser::Ref
+                    j.type_vars[0].name(generic_args: false).split("::").last.underscore
+                  elsif j.union_types.includes?(::Nil)
+                    "opt_#{j.union_types.find(&.!= ::Nil).name(generic_args: false).split("::").last.underscore.id}"
+                  else
+                    j.name(generic_args: false).split("::").last.underscore
+                  end
+              sj = "opt_#{sj.id}" if is_optional && ji == 0
+              sj
+            else
+              j
+            end
+          }
+        %}
         builder.add({{ args.splat }}) do |context|
           {% if !is_enum %}
             {% for r in resolve %}
-              {% r_idx, r_name, r_type = r %}
-              {% r_type = r_type.type_vars[0] if r_type <= ::Parser::Ref %}
-              {% opt_deref = r_type.union_types.includes?(::Nil) %}
-              {% r_type = "Opt(#{r_type.union_types.find(&.!= ::Nil)})".id if opt_deref %}
-              _r{{r_idx}} = context[{{ r_idx }}].value?({{ r_type }}) || raise ResolveFailureError.new("{{r_idx}} ({{ r_name }}){% if !is_array && !is_alias %} of {{ i }}{% end %}: expected {{ r_type }} but found #{context[{{ r_idx }}].stored_type_name}")
+              {%
+                r_idx, r_name, r_type = r
+                r_type = r_type.type_vars[0] if r_type <= ::Parser::Ref
+                opt_deref = r_type.union_types.includes?(::Nil)
+                r_type = "Opt(#{r_type.union_types.find(&.!= ::Nil)})".id if opt_deref
+                failure_location = "#{r_idx} (#{ r_name })"
+                failure_location += " of #{i}" unless is_array || is_alias
+              %}
+              _r{{r_idx}} = context[{{ r_idx }}].value?({{ r_type }}) || raise ResolveFailureError.new(
+                "#{{{ failure_location }}}: expected {{ r_type }} but found #{context[{{ r_idx }}].stored_type_name}"
+              )
             {% end %}
           {% end %}
           {% if is_array && resolve.size == 2 %}
@@ -180,13 +187,19 @@ module Parser::AST
             Any.new {{ r[2] }}.new({{ r[1].symbolize }})
           {% else %}
             Any.new {{ i }}.new(
-              {% for r in resolve %}{{ r[1] }}: {% if r[2] <= ::Parser::Ref %}::Parser::Ref.new(_r{{r[0]}}){% elsif r[2].union_types.includes?(::Nil) %}_r{{r[0]}}.value{% else %}_r{{r[0]}}{% end %},
+              {% for r in resolve %}
+                {{ r[1] }}: ({% if r[2] <= ::Parser::Ref %}
+                  ::Parser::Ref.new(_r{{r[0]}})
+                {% elsif r[2].union_types.includes?(::Nil) %}
+                  _r{{r[0]}}.value
+                {% else %}
+                  _r{{r[0]}}
+                {% end %}),
               {% end %}
             )
           {% end %}
         end
       {% end %}
-    {% debug %}
     {% end %}
   end
 end
