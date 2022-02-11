@@ -1,8 +1,5 @@
 require "./parser"
-
-def self.tok(symbol : Symbol, t : T) : {Symbol, T} forall T
-  {symbol, t}
-end
+require "./lexer"
 
 module JIS2
   alias AST = Parser::AST
@@ -156,69 +153,6 @@ module JIS2
   end
 end
 
-parser = Parser::Analysis(Parser::LR1::Builder).new
-JIS2::AST.compose_known_rules parser
-states = parser.build("program")
-at = Parser::Automaton.new(states)
-
-class Lexer(*T)
-  @matches = Array({Regex, Symbol, Proc(Regex::MatchData, Union(*T))?}).new
-  @skips = Array(Regex).new
-
-  def self.build(&) : self
-    ins = new
-    with ins yield
-    ins
-  end
-
-  def match(regex : Regex, result : Symbol)
-    @matches << {regex, result, nil}
-  end
-
-  def match(*symbols : Symbol)
-    symbols.each do |symbol|
-      @matches << {Regex.new(Regex.escape symbol.to_s), symbol, nil}
-    end
-  end
-
-  macro keywords(*kws)
-    {% for kw in kws %}
-      match(Regex.new(Regex.escape({{kw}}.to_s)), {{"kw_#{kw.id}".id.symbolize}})
-    {% end %}
-  end
-
-  def match(regex : Regex, symbol : Symbol, &result : Regex::MatchData -> Union(*T))
-    @matches << {regex, symbol, result}
-  end
-
-  def skip(regex : Regex)
-    @skips << regex
-  end
-
-  def lex(input : String, at : Parser::Automaton)
-    pos = 0
-    until pos == input.size
-      found = false
-      next if @skips.each do |m|
-        if match = m.match(input, pos, Regex::Options::ANCHORED)
-          pos = match.end
-          break true
-        end
-      end
-      next if @matches.each do |m, sym, r|
-        if match = m.match(input, pos, Regex::Options::ANCHORED)
-          r = r.call match if r.is_a? Proc
-          at << (r.nil? ? sym : {sym, r})
-          pos = match.end
-          break true
-        end
-      end
-      next if found
-      raise "no match at pos #{pos}: `#{input[pos..pos+30].dump_unquoted}`..."
-    end
-  end
-end
-
 lexer = Lexer(String, Int64).build do
   match :module, :func, :do, :end, :given, :until, :repeat, :finally
   match /∇/, :tt_int
@@ -228,6 +162,10 @@ lexer = Lexer(String, Int64).build do
   match /[a-z]+/, :_word, &.[0]
   skip /\s+/
 end
+
+parser = Parser::Analysis(Parser::LR1::Builder).new
+JIS2::AST.compose_known_rules parser
+at = Parser::Automaton.new(parser.build("program"))
 
 input = <<-JIS2
 module "default"
@@ -240,8 +178,7 @@ module "default"
 end
 JIS2
 
-lexer.lex(input, at)
+tree = lexer.lex(input, at)
 
-tree = at.eof
 PrettyPrint.format(tree.try &.value(JIS2::Module), STDOUT, 119)
 puts
