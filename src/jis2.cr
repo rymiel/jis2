@@ -49,6 +49,11 @@ module Node
   annotation EnumVal
   end
 
+  class ResolveFailureError < TypeCastError
+    def initialize(@message)
+    end
+  end
+
   macro structure(*t, given_target = nil)
     {% for i in t %}
       {% if i.is_a? Call %}
@@ -170,10 +175,7 @@ module Node
               {% r_type = r_type.type_vars[0] if r_type <= ::Ref %}
               {% opt_deref = r_type.union_types.includes?(::Nil) %}
               {% r_type = "Opt(#{r_type.union_types.find(&.!= ::Nil)})".id if opt_deref %}
-              _r{{r_idx}} = context[{{ r_idx }}].value?({{ r_type }}) || begin
-                puts "*** ResolveFailure: {{r_idx}} ({{ r_name }}){% if !is_array && !is_alias %} of {{ i }}{% end %}: expected {{ r_type }} but found #{context[{{ r_idx }}].stored_type_name} instead"
-                next nil
-              end
+              _r{{r_idx}} = context[{{ r_idx }}].value?({{ r_type }}) || raise ResolveFailureError.new("{{r_idx}} ({{ r_name }}){% if !is_array && !is_alias %} of {{ i }}{% end %}: expected {{ r_type }} but found #{context[{{ r_idx }}].stored_type_name}")
             {% end %}
           {% end %}
           {% if is_array && resolve.size == 2 %}
