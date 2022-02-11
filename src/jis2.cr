@@ -69,18 +69,29 @@ module JIS2
     rule @type, :":=", @value
   end
 
-  struct DecimalLiteral < Expression
+  record Assignment < Expression, name : String, value : Ref(Expression) do
     include AST
-    getter value : Int64
+    rule :_word >> @name, :":=", @value
+  end
+
+  record DecimalLiteral < Expression, value : Int64 do
+    include AST
     rule :_number >> @value
-    def initialize(@value)
-      p! @value
-    end
   end
 
   record VariableLiteral < Expression, name : String do
     include AST
     rule :_word >> @name
+  end
+
+  class ExpressionStatement < Statement
+    include AST
+    getter expression : Expression
+
+    rule @expression, :";"
+
+    def initialize(@expression)
+    end
   end
 
   struct Call < Expression
@@ -209,9 +220,9 @@ class Lexer(*T)
 end
 
 lexer = Lexer(String, Int64).build do
-  match :module, :func, :do, :end, :given, :until, :repeat
+  match :module, :func, :do, :end, :given, :until, :repeat, :finally
   match /∇/, :tt_int
-  match :"[", :"]", :":=", :"=", :"|"
+  match :"[", :"]", :":=", :"=", :"|", :";"
   match /"([^"]*)"/, :_string, &.[1]
   match /!(\d+)/, :_number, &.[1].to_i64
   match /[a-z]+/, :_word, &.[0]
@@ -223,6 +234,7 @@ module "default"
   ∇ func collatz[∇ num]
     given ∇ a := !1
     until =[a|!2] do
+    finally a := !0;
     end
   end
 end
