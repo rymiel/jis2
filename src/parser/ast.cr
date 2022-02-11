@@ -18,7 +18,13 @@ module Parser::AST
   macro rule(*t, given_target = nil)
     {% for i in t %}
       {% if i.is_a? Call %}
-        @[::Parser::AST::RuleNode(obj: {{ i.receiver }}, target: {{ i.args[0] }})]
+        {% if i.name == :">>" %}
+          @[::Parser::AST::RuleNode(obj: {{ i.receiver }}, target: {{ i.args[0] }})]
+        {% elsif i.name == :"=~" %}
+          @[::Parser::AST::RuleNode(obj: {{ i.receiver }}, target: {{ i.args[0] }}, absolute: true)]
+        {% else %}
+          {% i.raise %}
+        {% end %}
       {% else %}
         @[::Parser::AST::RuleNode(obj: {{ i }})]
       {% end %}
@@ -46,6 +52,7 @@ module Parser::AST
               m.annotations(::Parser::AST::RuleNode).each_with_index do |a, j|
                 a_obj = a[:obj]
                 a_target = a[:target]
+                a_abs = a[:absolute]
                 if a_obj.is_a? InstanceVar
                   matching_metavar = i.instance_vars.find(&.name.== a_obj.name[1..])
                   a_target = a_obj
@@ -59,7 +66,7 @@ module Parser::AST
                 rule_args << a_obj
                 if a_target
                   target = i.instance_vars.find(&.name.== a_target.name[1..])
-                  target_type = target.type
+                  target_type = a_abs ? a_obj.resolve : target.type
                   target_name = target.name
                   if target_type.union?
                     union_types = target_type.union_types
