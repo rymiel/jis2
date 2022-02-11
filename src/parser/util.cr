@@ -41,6 +41,11 @@ module Parser
       io << "&"
       value.inspect io
     end
+
+    def pretty_print(pp)
+      pp.text "&"
+      value.pretty_print pp
+    end
   end
 
   struct Opt(T)
