@@ -154,29 +154,18 @@ class Lexer(*T)
     pos = 0
     until pos == input.size
       found = false
-      puts "at pos #{pos}..."
-      @skips.each do |m|
+      next if @skips.each do |m|
         if match = m.match(input, pos, Regex::Options::ANCHORED)
           pos = match.end
-          found = true
-          break
+          break true
         end
       end
-      next if found
-      @matches.each do |m, sym, r|
+      next if @matches.each do |m, sym, r|
         if match = m.match(input, pos, Regex::Options::ANCHORED)
-          if r.is_a? Proc
-            r = r.call match
-          end
-          p! match, sym, r
-          if r.nil?
-            at << sym
-          else
-            at << {sym, r}
-          end
+          r = r.call match if r.is_a? Proc
+          at << (r.nil? ? sym : {sym, r})
           pos = match.end
-          found = true
-          break
+          break true
         end
       end
       next if found
