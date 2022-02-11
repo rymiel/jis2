@@ -89,6 +89,11 @@ module Node
                   matching_metavar = i.instance_vars.find(&.name.== a_obj.name[1..])
                   a_target = a_obj
                   a_obj = matching_metavar.type
+                  if metavar_separator = matching_metavar.annotation(::Node::Separator)
+                    if metavar_custom_name = metavar_separator[:name]
+                      a_obj = metavar_custom_name
+                    end
+                  end
                 end
                 rule_args << a_obj
                 if a_target
@@ -290,7 +295,7 @@ module JIS2
     getter args : Array(TypeName)
     getter body : Array(Statement)
 
-    structure @return_type, :r_func, :word >> @name, :sq_l, DefinitionArgs >> @args, :sq_r, @body, :r_end
+    structure @return_type, :r_func, :word >> @name, :sq_l, @args, :sq_r, @body, :r_end
 
     def initialize(@return_type, @name, @args, @body)
     end
