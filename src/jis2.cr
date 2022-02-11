@@ -4,283 +4,301 @@ def self.tok(symbol : Symbol, t : T) : {Symbol, T} forall T
   {symbol, t}
 end
 
-def desired(t, desired : T.class) : Any? forall T
-  t.nil? ? nil : Any.new t
+struct Ref(T)
+  @t : Slice(T)
+  def initialize(t : T)
+    @t = Slice(T).new(1, t)
+  end
+
+  def value : T
+    @t[0]
+  end
+
+  def to_s(io : IO)
+    value.to_s io
+  end
+
+  def inspect(io : IO)
+    io << "&"
+    value.inspect io
+  end
 end
 
-macro build_parser(kind, entrypoint, &block)
-  {% known_types = {} of Nil => Nil %}
-  ::Parser::Analysis(::Parser::{{ kind }}::Builder).build({{ entrypoint.names[0].underscore.stringify }}) do
-    {%
-      nonterminals = [] of Nil
-      block.body.expressions.each do |i|
-        if i.is_a?(Assign)
-          nonterminals << i
-        elsif i.is_a?(Call)
-          if i.name == :type
-            j = i.args[0]
-            known_types[j.is_a?(Path) ? j.names[0].underscore.stringify : j] = i.args[1]
-          end
-        end
-      end
-      nonterminals.each do |i|
-        if i.value.is_a?(Call) && i.value.name == :[]
-          r = i.value.receiver
-          if known_receiver = known_types[r.is_a?(Path) ? r.names[0].underscore.stringify : r]
-            j = i.target
-            known_types[j.is_a?(Path) ? j.names[0].underscore.stringify : j] = "Array(#{known_receiver})".id
-          end
-        end
-      end
-    %}
-    {% for i in nonterminals %}
-      {%
-        has_optional = false
-        array_base = nil
-        bases = [i.value]
-        variants = [] of Nil
-        methods = [] of Nil
-        bases.each do |base|
-          call_args = [] of Nil
-          method = nil
-          (1..50).each do # finite?
-            if base.is_a? Call
-              if base.name == :+
-                call_args.unshift base.args[0]
-                base = base.receiver
-              elsif base.name == :optional
-                has_optional = true
-                base = base.args[0]
-              elsif base.name == :|
-                bases << base.args[0]
-                base = base.receiver
-              elsif base.name == :[]
-                call_args.unshift base.receiver
-                array_base = base.receiver
-                has_optional = true
-                if base.args.size > 0
-                  variants << [i.target, i.target, base.args[0], base.receiver]
-                  methods << nil
-                  base = nil
-                else
-                  base = i.target
-                end
-              elsif base.name == :do
-                method = base.block
-                base = base.receiver
-                if base.is_a?(Expressions)
-                  base = base.expressions[0]
-                end
-              else
-                base.raise "Unknown base: #{base} (#{base.name})"
-              end
-            elsif !base.is_a? NilLiteral
-              if base.is_a? ArrayLiteral && !base.type.nil?
-                puts "#{base.type} #{base.type.class_name} #{base}"
-                raise
-              end
-              call_args.unshift base
-              base = nil
-            end
-          end
-          variants << ([i.target] + call_args)
-          methods << method
-        end
-      %}
-      {% if has_optional %}
-        {% target = variants[0][0] %}
-        {% target = target.is_a?(Path) ? target.names[0].underscore.stringify : target %}
-        {% return_type = known_types[target] %}
-        {% if return_type %}
-          add({{ target }}) do
-            Any.new {{ return_type }}.new
-          end
-        {% else %}
-          add({{ target }})
-        {% end %}
-      {% end %}
-      {% for r, ri in variants %}
-        {%
-          r = r.map do |j|
-            j.is_a?(Path) ? j.names[0].underscore.stringify : j
-          end
-          m = methods[ri]
-          return_type = known_types[r[0]]
-          can_implicit_convert = false
-          if return_type && return_type.is_a?(Path) && r.size == 2 && (implicit = known_types[r[1]])
-            can_implicit_convert = return_type.resolve >= implicit.resolve
-          end
-        %}
-        {% if m.nil? && array_base.nil? && !can_implicit_convert %}
-          add({{ r.splat }})
-        {% else %}
-          add({{ r.splat }}) do |%a|
-            {% found_indices = [] of Nil %}
-            {% for b, bi in r %}
-              {% if bi != 0 %}
-                {% if t = known_types[b] %}
-                  _{{ b.id.underscore }} = _{{ bi }} = (%a[{{ bi - 1 }}].value?({{ t }})) || (puts "ResolveFailure: #{{{ bi }}} ({{ t }}) of {{variants[0][0]}}, found #{%a[{{ bi - 1 }}].stored_type_name} instead"; next nil)
-                  {% found_indices << bi %}
-                {% end %}
-              {% end %}
-            {% end %}
-            {% if array_base %}
-              {% if r.size == 3 && found_indices.includes?(1) && found_indices.includes?(2) %}
-                _1 << _2
-                Any.new _1
-              {% elsif r.size == 4 && found_indices.includes?(1) && found_indices.includes?(3) %}
-                _1 << _3
-                Any.new _1
-              {% elsif r.size == 2 && return_type && found_indices.includes?(1) %}
-                Any.new {{ return_type }}{_1}
-              {% else %}
-                # r.size {{ r.size }}
-                # return_type {{ return_type }}
-                # found_indices {{ found_indices }}
-                nil
-              {% end %}
-            {% elsif can_implicit_convert %}
-              Any.new _1
-            {% elsif return_type %}
-              {% if return_type.resolve.ancestors.includes?(Enum) && m.body.is_a?(SymbolLiteral) %}
-                %m_body = {{return_type}}.new({{ m.body }})
-              {% else %}
-                %m_body = begin
-                  {{ m.body }}
-                end
-              {% end %}
-              ::desired(%m_body, {{ return_type }})
-            {% else %}
-              {{ m.body }}
-              nil
-            {% end %}
-          end
-        {% end %}
+struct Opt(T)
+  @t : T?
+  def initialize(t : T)
+    @t = t
+  end
+
+  def initialize
+    @t = nil
+  end
+
+  def value : T?
+    @t
+  end
+end
+
+module Node
+  annotation RuleNode
+  end
+  annotation Aliased
+  end
+  annotation Separator
+  end
+  annotation EnumVal
+  end
+
+  macro structure(*t, given_target = nil)
+    {% for i in t %}
+      {% if i.is_a? Call %}
+        @[::Node::RuleNode(obj: {{ i.receiver }}, target: {{ i.args[0] }})]
+      {% else %}
+        @[::Node::RuleNode(obj: {{ i }})]
       {% end %}
     {% end %}
+    def self._structure%structure{t}
+    end
   end
-  {% debug %}
-end
 
-class Object
-  def ref : JIS2::Ref(self)
-    JIS2::Ref.new self
+  def self.compose_known_rules(builder : ::Parser::Analysis(T)) forall T
+    {% begin %}
+      {%
+        spider = [] of Nil
+        ::Node.includers.each do |i|
+          if i.abstract?
+            i.subclasses.each do |j|
+              if ::Node.includers.includes?(j)
+                spider << {i, [i, j], [{0, "subclass".id, j}], :alias}
+              end
+            end
+          end
+          i.class.methods.each do |m|
+            if m.name.starts_with? "_structure"
+              rule_args = [i]
+              resolves = [] of Nil
+              m.annotations(::Node::RuleNode).each_with_index do |a, j|
+                rule_args << a[:obj]
+                if a[:target]
+                  target = i.instance_vars.find(&.name.== a[:target].name[1..])
+                  target_type = target.type
+                  target_name = target.name
+                  if target_type.union?
+                    union_types = target_type.union_types
+                    if union_types.includes? ::Nil
+                      base_type = union_types.find(&.!= ::Nil)
+                      spider << {base_type, [base_type, base_type], [
+                        {0, "optional".id, base_type}
+                      ], :optional}
+                      spider << {base_type, [base_type], [] of Nil, :optional}
+                    end
+                  end
+                  if target_type <= ::Array
+                    member = target_type.type_vars[0]
+                    if separator_ann = target.annotation(::Node::Separator)
+                      separator = separator_ann[0]
+                      unique_name = separator_ann[:name] || target_type
+                      spider << {target_type, [unique_name], [] of Nil}
+                      spider << {target_type, [unique_name, member], [
+                        {0, "array appended element".id, member}
+                      ]}
+                      spider << {target_type, [unique_name, unique_name, separator, member], [
+                        {0, "array base".id, target_type},
+                        {2, "array appended element".id, member}
+                      ]}
+                    else
+                      spider << {target_type, [target_type], [] of Nil}
+                      spider << {target_type, [target_type, target_type, member], [
+                        {0, "array base".id, target_type},
+                        {1, "array appended element".id, member}
+                      ]}
+                    end
+                  elsif target_type <= ::Enum
+                    if enum_ann = target_type.annotation(::Node::EnumVal)
+                      ann_keys = enum_ann.named_args.keys
+                      unmatched = target_type.constants.map(&.underscore).reject { |h| ann_keys.includes? h }
+                      target.raise "EnumVal annotation is missing values for the enum #{target_type}: #{unmatched}" unless unmatched.empty?
+                      enum_ann.named_args.each do |k, v|
+                        spider << {target_type, [target_type, v], [{0, k, target_type}], :enum}
+                      end
+                    end
+                  end
+                  resolves << {j, target_name, target_type}
+                  target_type.annotations(::Node::Aliased).each do |aliased|
+                    j = aliased[0]
+                    spider << {j, [j, target_type], [{0, "alias".id, target_type}], :alias}
+                  end
+                end
+              end
+              spider << {i, rule_args, resolves}
+            end
+          end
+          i.annotations(::Node::Aliased).each do |aliased|
+            j = aliased[0]
+            spider << {j, [j, i], [{0, "alias".id, i}], :alias}
+          end
+        end
+        spider = spider.uniq
+      %}
+      {% puts spider.map { |i| "#{i[0]}:#{" (#{i[3]})".id if i[3]}\n  args: #{i[1]}\n  resolve: #{i[2].map { |j| "\n    [#{j[0]}] = #{j[1]} : #{j[2]}" }.join("").id}\n\n" }.join("") %}
+      {% for x in spider %}
+        {% i, args, resolve, meta = x %}
+        {% is_alias = meta == :alias %}
+        {% is_enum = meta == :enum %}
+        {% is_array = i.is_a? TypeNode && i <= ::Array %}
+        {% is_ref = i.is_a? TypeNode && i <= ::Ref %}
+        {% is_optional = meta == :optional %}
+        {% args = args.map_with_index { |j, ji|
+          if j.is_a? Path
+            j.names.last.underscore.stringify
+          elsif j.is_a? TypeNode
+            sj = if j <= ::Array
+                   j.type_vars[0].name(generic_args: false).split("::").last.underscore + "s"
+                 else
+                   j.name(generic_args: false).split("::").last.underscore
+                 end
+            sj = "opt_#{sj.id}" if is_optional && ji == 0
+            sj
+          else
+            j
+          end
+        } %}
+        builder.add({{ args.splat }}) do |context|
+          {% if !is_enum %}
+            {% for r in resolve %}
+              {% r_idx, r_name, r_type = r %}
+              {% r_type = r_type.type_vars[0] if r_type <= ::Ref %}
+              {% opt_deref = r_type.union_types.includes?(::Nil) %}
+              {% r_type = "Opt(#{r_type.union_types.find(&.!= ::Nil)})".id if opt_deref %}
+              _r{{r_idx}} = context[{{ r_idx }}].value?({{ r_type }}) || begin
+                puts "*** ResolveFailure: {{r_idx}} ({{ r_name }}){% if !is_array && !is_alias %} of {{ i }}{% end %}: expected {{ r_type }} but found #{context[{{ r_idx }}].stored_type_name} instead"
+                next nil
+              end
+            {% end %}
+          {% end %}
+          {% if is_array && resolve.size == 2 %}
+            _r0 << {% if args.size == 3 %} _r1 {% else %} _r2 {% end %}
+            Any.new _r0
+          {% elsif is_array && resolve.size == 1 %}
+            _arr = {{ i }}.new
+            _arr << _r0
+            Any.new _arr
+          {% elsif is_alias %}
+            Any.new _r0
+          {% elsif is_optional && resolve.size == 1 %}
+            Any.new Opt({{ i }}).new _r0
+          {% elsif is_optional && resolve.size == 0 %}
+            Any.new Opt({{ i }}).new
+          {% elsif is_enum %}
+            {% r = resolve[0] %}
+            Any.new {{ r[2] }}.new({{ r[1].symbolize }})
+          {% else %}
+            Any.new {{ i }}.new(
+              {% for r in resolve %}{{ r[1] }}: {% if r[2] <= ::Ref %}::Ref.new(_r{{r[0]}}){% elsif r[2].union_types.includes?(::Nil) %}_r{{r[0]}}.value{% else %}_r{{r[0]}}{% end %},
+              {% end %}
+            )
+          {% end %}
+        end
+      {% end %}
+    {% debug %}
+    {% end %}
   end
 end
 
 module JIS2
+  @[Node::EnumVal(
+    integer: :tt_int
+  )]
+  @[Node::Aliased(Type)]
   enum PrimitiveType
     Integer
   end
+  @[Node::EnumVal(
+    given: :r_given,
+    repeat: :r_repeat,
+    until: :r_until
+  )]
   enum BlockStatementKind
     Given
     Repeat
     Until
   end
   alias Type = PrimitiveType
-  record TypeName, type : Type, name : String
-
-  struct Ref(T)
-    @t : Slice(T)
-    def initialize(t : T)
-      @t = Slice(T).new(1, t)
-    end
-
-    def value : T
-      @t[0]
-    end
-
-    def to_s(io : IO)
-      value.to_s io
-    end
-
-    def inspect(io : IO)
-      io << "&"
-      value.inspect io
-    end
-  end
-
-  struct Opt(T)
-    @t : T?
-    def initialize(t : T)
-      @t = t
-    end
-
-    def initialize
-      @t = nil
-    end
-
-    def value : T?
-      @t
-    end
+  record TypeName, type : Type, name : String do
+    include Node
+    structure Type >> @type, :word >> @name
   end
 
   abstract class Statement
+    include Node
   end
   abstract struct Expression
+    include Node
   end
   abstract struct BlockStatement
+    include Node
   end
-  record ExpressionBlockStatement < BlockStatement, kind : BlockStatementKind, value : Expression
+  record ExpressionBlockStatement < BlockStatement, kind : BlockStatementKind, value : Expression do
+    include Node
+    structure BlockStatementKind >> @kind, Expression >> @value
+  end
 
-  record Declaration < Expression, type : TypeName, value : Ref(Expression)
-  record DecimalLiteral < Expression, value : Int64
+  record Declaration < Expression, type : TypeName, value : Ref(Expression) do
+    include Node
+    structure TypeName >> @type, :assign, Expression >> @value
+  end
+  record DecimalLiteral < Expression, value : Int64 do
+    include Node
+    structure :number >> @value
+  end
+
+  record Finally, statement : Statement do
+    include Node
+    structure :r_finally, Statement >> @statement
+  end
 
   class Block < Statement
-    def initialize(@b_statements : Array(BlockStatement), @body : Array(Statement), @finally : Statement?)
+    include Node
+    getter b_statements : Array(BlockStatement)
+    getter body : Array(Statement)
+    getter finally : Finally?
+
+    structure BlockStatements >> @b_statements, :r_do, Statements >> @body, OptFinally >> @finally, :r_end
+
+    def initialize(@b_statements, @body, @finally)
     end
   end
 
   class FunctionDefinition < Statement
-    def initialize(@return_type : Type, @name : String, @args : Array(TypeName), @body : Array(Statement))
+    include Node
+    getter return_type : Type
+    getter name : String
+    @[Separator(:pipe, name: DefinitionArgs)]
+    getter args : Array(TypeName)
+    getter body : Array(Statement)
+
+    structure Type >> @return_type, :r_func, :word >> @name, :sq_l, DefinitionArgs >> @args, :sq_r, Statements >> @body, :r_end
+
+    def initialize(@return_type, @name, @args, @body)
     end
   end
 
+  @[Node::Aliased(Program)]
   class Module
-    def initialize(@name : String, @body : Array(Statement))
+    include Node
+    getter name : String
+    getter body : Array(Statement)
+
+    structure :r_module, :string >> @name, Statements >> @body, :r_end
+
+    def initialize(@name, @body)
     end
   end
 end
 
-states = build_parser(LR1, Program) do
-  type :string,         String
-  type :word,           String
-  type :number,         Int64
-  type TypeSpecifier,   JIS2::Type
-  type Program,         JIS2::Module
-  type Module,          JIS2::Module
-  type Statement,       JIS2::Statement
-  type Expression,      JIS2::Expression
-  type DefinitionArg,   JIS2::TypeName
-  type BlockStatement,  JIS2::BlockStatement
-  type DecimalLiteral,  JIS2::DecimalLiteral
-  type Declaration,     JIS2::Declaration
-  type BlockFinally,    JIS2::Opt(JIS2::Statement)
-  type Block,           JIS2::Block
-  type ExprBlkStatKind, JIS2::BlockStatementKind
-  type FunctionDef,     JIS2::FunctionDefinition
-
-  Program         = Module
-  Module          = (:r_module + :string + Statements + :r_end).do { JIS2::Module.new _string, _statements }
-  Statements      = Statement[]
-  Statement       = FunctionDef | :r_return + Expression + :semi | Expression + :semi | Block
-  Block           = (BlockStatements + :r_do + Statements + BlockFinally + :r_end).do { JIS2::Block.new _1, _3, _4.value }
-  BlockStatements = BlockStatement[]
-  BlockFinally    = optional(:r_finally + Statement).do { JIS2::Opt.new _statement }
-  BlockStatement  = (ExprBlkStatKind + Expression).do { JIS2::ExpressionBlockStatement.new(_expr_blk_stat_kind, _expression) }
-  ExprBlkStatKind = :r_given.do { :given } | :r_repeat.do { :repeat } | :r_until.do { :until }
-  Expression      = DecimalLiteral | :word | Declaration | Assignment | Call
-  DecimalLiteral  = :number.do { JIS2::DecimalLiteral.new _number }
-  Declaration     = (DefinitionArg + :assign + Expression).do { JIS2::Declaration.new _definition_arg, _expression.ref }
-  Assignment      = :word + :assign + Expression
-  Call            = CallName + :sq_l + CallArgs + :sq_r
-  CallName        = :word | :plus | :eq
-  CallArgs        = Expression[:pipe]
-  TypeSpecifier   = (:tt_int).do { :integer }
-  FunctionDef     = (TypeSpecifier + :r_func + :word + :sq_l + DefinitionArgs + :sq_r + Statements + :r_end).do { JIS2::FunctionDefinition.new _1, _3, _5, _7 }
-  DefinitionArgs  = DefinitionArg[:pipe]
-  DefinitionArg   = (TypeSpecifier + :word).do { JIS2::TypeName.new _type_specifier, _word }
-end
+parser = Parser::Analysis(Parser::LR1::Builder).new
+Node.compose_known_rules parser
+states = parser.build("program")
 at = Parser::Automaton.new(states)
 
 at << :r_module << tok(:string, "default")
