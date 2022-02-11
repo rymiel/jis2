@@ -1,18 +1,10 @@
 require "colorize"
+require "./parser/util"
 require "./parser/lr0"
 require "./parser/lr1"
 require "./parser/analysis"
 require "./parser/automaton"
-
-class String
-  ANSI_REGEX = /\x1b\[[0-9;]*m/
-  def strip_color : String
-    self.gsub(ANSI_REGEX, "")
-  end
-  def color_ljust(n : Int32) : String
-    self.ljust(n + (self.size - strip_color.size))
-  end
-end
+require "./parser/ast"
 
 def until_unchanged(obj : Enumerable, &)
   old_size = obj.size
