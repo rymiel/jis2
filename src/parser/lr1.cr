@@ -20,7 +20,7 @@ module Parser::LR1
 
     def closure(i : Set(Item)) : Set(Item)
       j = i.dup
-      until_unchanged(j) do
+      j.until_unchanged do
         j.each do |item|
           if (r = item.right_of_dot?).is_a? NonTerminal
             r2 = item.body[item.dot + 1]?

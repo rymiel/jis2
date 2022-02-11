@@ -6,17 +6,6 @@ require "./parser/analysis"
 require "./parser/automaton"
 require "./parser/ast"
 
-def until_unchanged(obj : Enumerable, &)
-  old_size = obj.size
-  ret = nil
-  loop do
-    ret = yield
-    break if obj.size == old_size
-    old_size = obj.size
-  end
-  ret
-end
-
 module Parser
   VERSION = "0.1.0"
 

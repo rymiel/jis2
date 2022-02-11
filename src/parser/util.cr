@@ -9,6 +9,19 @@ class String
   end
 end
 
+module Enumerable(T)
+  def until_unchanged(&)
+    old_size = self.size
+    ret = nil
+    loop do
+      ret = yield
+      break if self.size == old_size
+      old_size = self.size
+    end
+    ret
+  end
+end
+
 module Parser
   struct Ref(T)
     @t : Slice(T)

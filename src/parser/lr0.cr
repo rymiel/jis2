@@ -22,7 +22,7 @@ module Parser::LR0
 
     def closure(i : Set(Item)) : Set(Item)
       j = i.dup
-      until_unchanged(j) do
+      j.until_unchanged do
         j.each do |item|
           if (r = item.right_of_dot?).is_a? NonTerminal
             @analysis.@rules.map(&.production).select(&.name.== r.name).each do |production|

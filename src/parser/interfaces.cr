@@ -28,7 +28,7 @@ module Parser
       c = Set(Set(T)).new
       c << closure(Set{initial entrypoint})
 
-      until_unchanged(c) do
+      c.until_unchanged do
         c.each do |i|
           @analysis.all_symbols.each do |x|
             transition = goto(i, x)
