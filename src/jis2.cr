@@ -184,7 +184,7 @@ class Lexer(*T)
     @skips << regex
   end
 
-  def lex(input : String, at)
+  def lex(input : String, at : Parser::Automaton)
     pos = 0
     until pos == input.size
       found = false
@@ -197,7 +197,6 @@ class Lexer(*T)
       next if @matches.each do |m, sym, r|
         if match = m.match(input, pos, Regex::Options::ANCHORED)
           r = r.call match if r.is_a? Proc
-          p! r
           at << (r.nil? ? sym : {sym, r})
           pos = match.end
           break true
@@ -231,6 +230,6 @@ JIS2
 
 lexer.lex(input, at)
 
-tree = at.run
-PrettyPrint.format(tree.value(JIS2::Module), STDOUT, 119)
+tree = at.eof
+PrettyPrint.format(tree.try &.value(JIS2::Module), STDOUT, 119)
 puts
