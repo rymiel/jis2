@@ -134,7 +134,7 @@ module JIS2
     getter args : Array(TypeName)
     getter body : Array(Statement)
 
-    rule @return_type, :func, :_word >> @name, :"[", @args, :"]", @body, :end
+    rule :func, :_word >> @name, :"[", @args, :"]", @return_type, @body, :end
 
     def initialize(@return_type, @name, @args, @body)
     end
@@ -169,11 +169,14 @@ at = Parser::Automaton.new(parser.build("program"))
 
 input = <<-JIS2
 module "default"
-  ∇ func collatz[∇ num]
+  func collatz[∇ num] ∇
     given ∇ a := !1
     until =[a|!2] do
     finally a := !0;
     end
+  end
+
+  func main[] ∇
   end
 end
 JIS2
