@@ -15,6 +15,19 @@ module Parser::AST
     end
   end
 
+  macro smart_enum(e, h)
+    @[::Parser::AST::EnumVal(
+    {% for k, v in h %}
+      {{k}}: {{v}},
+    {% end %}
+    )]
+    enum {{e}}
+    {% for k, v in h %}
+      {{k.camelcase}}
+    {% end %}
+    end
+  end
+
   macro rule(*t, given_target = nil)
     {% for i in t %}
       {% if i.is_a? Call %}
@@ -63,7 +76,11 @@ module Parser::AST
                     end
                   end
                 end
-                rule_args << a_obj
+                if a_abs
+                  rule_args << a_obj.resolve
+                else
+                  rule_args << a_obj
+                end
                 if a_target
                   target = i.instance_vars.find(&.name.== a_target.name[1..])
                   target_type = a_abs ? a_obj.resolve : target.type
