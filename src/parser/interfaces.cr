@@ -18,7 +18,7 @@ module Parser
       j = Set(T).new
       i.each do |item|
         if item.right_of_dot? == x
-          j += Set{item.copy_with(dot: item.dot + 1)}
+          j << item.copy_with(dot: item.dot + 1)
         end
       end
       closure(j)

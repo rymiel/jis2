@@ -77,8 +77,7 @@ module Parser
         @stack.pop prod.body.size
         reduction_args = @symbols.pop(prod.epsilon? ? 0 : prod.body.size)
         action_result = action.action.try &.call(reduction_args)
-        action_result ||= Any.new Reduced.new prod.name, reduction_args
-        @stack << state.actions[NonTerminal.new(prod.name)].as Int32
+        @stack << state.actions[NonTerminal.new(prod.name_idx)].as Int32
         @symbols << action_result
       in Nil
       end

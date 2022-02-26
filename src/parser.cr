@@ -11,7 +11,18 @@ module Parser
 
   abstract struct Node
   end
-  record NonTerminal < Node, name : String do
+  record NonTerminal < Node, name_idx : Int32 do
+    def initialize(name : String)
+      idx = Parser.string_pool[name]?
+      if idx.nil?
+        idx = Parser.string_pool.size
+        Parser.string_pool[name] = idx
+      end
+      @name_idx = idx
+    end
+    def name : String
+      Parser.string_pool.key_for @name_idx
+    end
     def inspect(io : IO)
       io << name.inspect.colorize.yellow
     end
@@ -40,19 +51,31 @@ module Parser
   EPSILON = Epsilon.new
   EOS = EndOfStream.new
   ENTRYPOINT = "ENTRYPOINT"
+  class_getter string_pool = {ENTRYPOINT => 0}
 
-  record Production, name : String, body : Array(Node) do
+  record Production, name_idx : Int32, body : Array(Node) do
+    def initialize(name : String, @body)
+      idx = Parser.string_pool[name]?
+      if idx.nil?
+        idx = Parser.string_pool.size
+        Parser.string_pool[name] = idx
+      end
+      @name_idx = idx
+    end
+    def name : String
+      Parser.string_pool.key_for @name_idx
+    end
     def inspect(io : IO)
       io << smart_name << " -> " << @body.join " "
     end
     def smart_name : String
-      (name == ENTRYPOINT ? "*".colorize.bold.green : name.colorize.bold).to_s
+      (@name_idx == ENTRYPOINT ? "*".colorize.bold.green : name.colorize.bold).to_s
     end
     def epsilon? : Bool
-      @body == [EPSILON]
+      @body.size == 1 && @body.first.is_a?(Epsilon)
     end
     def result : NonTerminal
-      NonTerminal.new @name
+      NonTerminal.new @name_idx
     end
   end
 

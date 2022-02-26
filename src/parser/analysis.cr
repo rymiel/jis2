@@ -1,3 +1,5 @@
+require "string_pool"
+
 module Parser
 
   alias Action = Proc(Array(Any), Any?)
@@ -13,6 +15,7 @@ module Parser
   class Analysis(T)
     @first = Hash(Node, Set(Node)).new { |hash, key| hash[key] = Set(Node).new }
     @follow = Hash(NonTerminal, Set(Node)).new { |hash, key| hash[key] = Set(Node).new }
+    @string_pool = StringPool.new
     getter rules = Array(ActionableProduction).new
     getter first, follow
 
@@ -32,9 +35,10 @@ module Parser
     end
 
     def add(name : String, *items, action : Action? = nil) : ActionableProduction
+      name = @string_pool.get name
       mapped = items.to_a.map { |i|
         x = case i
-        when String then NonTerminal.new i
+        when String then NonTerminal.new @string_pool.get i
         when Symbol then Terminal.new i
         else raise "Invalid rule item #{i.class}"
         end
@@ -124,7 +128,7 @@ module Parser
           in Terminal then Set(Node){x}
           in NonTerminal
             running = @first[x].dup
-            @rules.map(&.production).select(&.name.== x.name).each do |candidate|
+            @rules.map(&.production).select(&.name_idx.== x.name_idx).each do |candidate|
               running += first(candidate.body.reject(DOT))
               running << EPSILON if candidate.epsilon?
             end

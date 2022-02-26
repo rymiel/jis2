@@ -24,10 +24,11 @@ module Parser::LR1
         j.each do |item|
           if (r = item.right_of_dot?).is_a? NonTerminal
             r2 = item.body[item.dot + 1]?
-            @analysis.@rules.map(&.production).select(&.name.== r.name).each do |production|
+            @analysis.@rules.each do |rule|
+              next unless rule.production.name_idx == r.name_idx
               compound_first = @analysis.first(r2, item.lookahead)
               compound_first.each do |b|
-                j << Item.new production, 0, b
+                j << Item.new  rule.production, 0, b
               end
             end
           end
