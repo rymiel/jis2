@@ -238,20 +238,23 @@ lexer = Lexer(String, Int64).build do
   skip /\s+/
 end
 
-parser = Parser::Analysis(Parser::LR1::Builder).new
-JIS2::AST.compose_known_rules parser
-at = Parser::Automaton.new(parser.build("program"))
-
 input = <<-JIS2
 module "default"
-  func collatz[∇ num] ∇
-    given ∇ a := !1
-    until =[a|!2] do
-    finally a := !0;
+  func collatz[∇ n] ∇
+    given ∇ count := !0
+    until =[n | !1] do
+      if =[mod[n | !2] | !0] then
+        n := ÷∇[$ | !2];
+      else
+        n := +[*[$ | !3] | !1];
+      end
+      count := +[$ | !1];
+    finally return count;
     end
   end
 
   func main[] ∇
+    return collatz[!7];
   end
 end
 JIS2
