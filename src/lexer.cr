@@ -34,7 +34,7 @@ class Lexer(*T)
     @skips << regex
   end
 
-  def lex(input : String, at : Parser::Automaton)
+  def lex(input : String, at)
     pos = 0
     until pos == input.size
       found = false
