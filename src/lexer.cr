@@ -47,7 +47,12 @@ class Lexer(*T)
       next if @matches.each do |m, sym, r|
         if match = m.match(input, pos, Regex::Options::ANCHORED)
           r = r.call match if r.is_a? Proc
-          at << (r.nil? ? sym : {sym, r})
+          pos = Parser::ChrPos.new match.begin, match.end
+          if r.nil?
+            at.add sym, pos: pos
+          else
+            at.add sym, r, pos: pos
+          end
           pos = match.end
           break true
         end

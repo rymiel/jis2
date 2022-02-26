@@ -22,12 +22,29 @@ module Parser
     def initialize(@states)
     end
 
-    record Token, symbol : Symbol?, t : Any?
-    record Reduced, name : String, t : Array(Any)
+    record RowCol, row : Int32, col : Int32
+    record RowPos, s : RowCol, e : RowCol
+    record Token, symbol : Symbol?, t : Any?, pos : ChrPos? do
+      def inspect(io : IO) : Nil
+        io << "Token"
+        if symbol.nil?
+          io << ":EOF"
+        else
+          symbol.inspect io
+        end
+        unless t.nil?
+          io << "("
+          t.inspect io
+          io << ")"
+        end
+        io << "@" << (pos || "???")
+      end
+    end
+    record Reduced, name : String, t : Array(StackSym)
 
     getter states : Array(State)
     getter stack = [0]
-    getter symbols = Array(Any).new
+    getter symbols = Array(StackSym).new
 
     def state : State
       @states[stack.last]
@@ -39,18 +56,18 @@ module Parser
       new_state
     end
 
-    def <<(token : {Symbol, U}) forall U
-      run Token.new token[0], Any.new token[1]
+    def add(token : Symbol, value : U, *, pos : Pos? = nil) forall U
+      run Token.new token, Any.new(value), pos
       self
     end
 
-    def <<(token : Symbol)
-      run Token.new token, nil
+    def add(token : Symbol, *, pos : ChrPos? = nil)
+      run Token.new token, nil, pos
       self
     end
 
     def eof
-      run Token.new nil, nil
+      run Token.new nil, nil, nil
     end
 
     def run(top : Token)
@@ -62,7 +79,7 @@ module Parser
       action = state.actions[a]?
       if action.nil?
         action = state.actions[EPSILON]?
-        action = state.actions[a] if action.nil?
+        raise "No action #{a} or epsilon in #{state}" if action.nil?
         matched_epsilon = true
       end
       puts "Input: #{top} => action #{action}"
@@ -70,13 +87,18 @@ module Parser
       in Int32
         @stack << action
         return run(top) if matched_epsilon
-        @symbols << ((top.try &.t) || Any.new top)
+        if (t = top.try &.t).nil?
+          @symbols << StackSym.new Any.new(top), top.pos
+        else
+          @symbols << StackSym.new t, top.pos
+        end
         return
       in ActionableProduction
         prod = action.production
         @stack.pop prod.body.size
         reduction_args = @symbols.pop(prod.epsilon? ? 0 : prod.body.size)
         action_result = action.action.try &.call(reduction_args)
+        action_result ||= StackSym.new Any.new(Reduced.new prod.name, reduction_args), nil
         @stack << state.actions[NonTerminal.new(prod.name_idx)].as Int32
         @symbols << action_result
       in Nil

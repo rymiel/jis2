@@ -62,4 +62,27 @@ module Parser
       @t
     end
   end
+
+  record ChrPos, s : Int32, e : Int32 do
+    def inspect(io : IO) : Nil
+      io << "ChrPos["
+      to_s io
+      io << "]"
+    end
+    def to_s(io : IO) : Nil
+      io << s << ":" << e
+    end
+    def self.join(i : Array(ChrPos)) : ChrPos
+      s = i.min_of &.s
+      e = i.max_of &.e
+      ChrPos.new s, e
+    end
+  end
+  alias Pos = ChrPos
+
+  record StackSym, t : Any, pos : Pos? do
+    def as_tuple : {Any, Pos?}
+      {t, pos}
+    end
+  end
 end

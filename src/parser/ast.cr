@@ -10,6 +10,8 @@ module Parser::AST
   annotation EnumVal
   end
 
+  property! pos : Hash(Symbol, Pos)
+
   class ResolveFailureError < TypeCastError
     def initialize(@message)
     end
@@ -171,6 +173,18 @@ module Parser::AST
           }
         %}
         builder.add({{ args.splat }}) do |context|
+          {% if resolve.size == 0 %}
+            _pos = nil
+          {% elsif resolve.size == 1 %}
+            _pos = context[0].pos
+          {% else %}
+            _pos = ::Parser::Pos.join(context.map(&.pos).compact)
+          {% end %}
+          {% i_type = i.resolve? %}
+          {% i_obj = i_type && i_type < ::Parser::AST %}
+          {% if i_obj %}
+            _obj_pos = {} of Symbol => ::Parser::Pos
+          {% end %}
           {% if !is_enum %}
             {% for r in resolve %}
               {%
@@ -181,29 +195,33 @@ module Parser::AST
                 failure_location = "#{r_idx} (#{ r_name })"
                 failure_location += " of #{i}" unless is_array || is_alias
               %}
-              _r{{r_idx}} = context[{{ r_idx }}].value?({{ r_type }}) || raise ResolveFailureError.new(
-                "#{{{ failure_location }}}: expected {{ r_type }} but found #{context[{{ r_idx }}].stored_type_name}"
+              %t{r}, %pos{r} = context[{{ r_idx }}].as_tuple
+              _r{{r_idx}} = %t{r}.value?({{ r_type }}) || raise ResolveFailureError.new(
+                "#{{{ failure_location }}}: expected {{ r_type }} but found #{%t{r}.stored_type_name}"
               )
+              {% if i_obj %}
+                _obj_pos[{{ r_name.symbolize }}] = %pos{r} if %pos{r}
+              {% end %}
             {% end %}
           {% end %}
           {% if is_array && resolve.size == 2 %}
             _r0 << {% if args.size == 3 %} _r1 {% else %} _r2 {% end %}
-            Any.new _r0
+            _f = Any.new _r0
           {% elsif is_array && resolve.size == 1 %}
             _arr = {{ i }}.new
             _arr << _r0
-            Any.new _arr
+            _f = Any.new _arr
           {% elsif is_alias %}
-            Any.new _r0
+            _f = Any.new _r0
           {% elsif is_optional && resolve.size == 1 %}
-            Any.new Opt({{ i }}).new _r0
+            _f = Any.new Opt({{ i }}).new _r0
           {% elsif is_optional && resolve.size == 0 %}
-            Any.new Opt({{ i }}).new
+            _f = Any.new Opt({{ i }}).new
           {% elsif is_enum %}
             {% r = resolve[0] %}
-            Any.new {{ r[2] }}.new({{ r[1].symbolize }})
+            _f = Any.new {{ r[2] }}.new({{ r[1].symbolize }})
           {% else %}
-            Any.new {{ i }}.new(
+            _obj = {{ i }}.new(
               {% for r in resolve %}
                 {{ r[1] }}: ({% if r[2] <= ::Parser::Ref %}
                   ::Parser::Ref.new(_r{{r[0]}})
@@ -214,7 +232,12 @@ module Parser::AST
                 {% end %}),
               {% end %}
             )
+            {% if i_obj %}
+            _obj.pos = _obj_pos
+            {% end %}
+            _f = Any.new _obj
           {% end %}
+          ::Parser::StackSym.new _f, _pos
         end
       {% end %}
     {% end %}

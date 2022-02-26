@@ -2,7 +2,7 @@ require "string_pool"
 
 module Parser
 
-  alias Action = Proc(Array(Any), Any?)
+  alias Action = Proc(Array(StackSym), StackSym?)
   record ActionableProduction, production : Production, action : Action? do
     def inspect(io : IO)
       io << "["
