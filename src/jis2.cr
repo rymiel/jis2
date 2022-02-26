@@ -78,6 +78,11 @@ module JIS2
     rule :_word >> @name
   end
 
+  record LeftReference < Expression do
+    include AST
+    rule :"$"
+  end
+
   class ExpressionStatement < Statement
     include AST
     getter expression : Expression
@@ -88,21 +93,30 @@ module JIS2
     end
   end
 
+  class ReturnStatement < Statement
+    include AST
+    getter expression : Expression
+
+    rule :return, @expression, :";"
+
+    def initialize(@expression)
+    end
+  end
+
   struct Call < Expression
     include AST
     getter name : String
     @[Separator(:"|", name: CallArgs)]
     getter args : Array(Expression)
+    getter operator : Operator?
 
     rule :_word >> @name, :"[", @args, :"]"
     rule ::JIS2::Operator =~ @name, :"[", @args, :"]"
 
     def initialize(@name, @args)
     end
-    def initialize(name operator : Operator, @args)
-      @name = case operator
-      in .equal? then "="
-      end
+    def initialize(name @operator : Operator, @args)
+      @name = ""
     end
   end
 
@@ -123,6 +137,21 @@ module JIS2
     end
   end
 
+  class IfStatement < Statement
+    include AST
+    getter condition : Expression
+    getter body : Array(Statement)
+    getter else_body : Array(Statement)?
+
+    rule :if, @condition, :then, @body, :end
+    rule :if, @condition, :then, @body, :else, Array(::JIS2::Statement) =~ @else_body, :end
+
+    def initialize(@condition, @body)
+    end
+    def initialize(@condition, @body, @else_body)
+    end
+  end
+
   class FunctionDefinition < Statement
     include AST
     getter return_type : Type
@@ -134,6 +163,26 @@ module JIS2
     rule :func, :_word >> @name, :"[", @args, :"]", @return_type, @body, :end
 
     def initialize(@return_type, @name, @args, @body)
+    end
+
+    def diagnostic(io : IO)
+      @name.to_s io
+      io << " ["
+      @args.each { |i| io << "#{i.type} #{i.name}" }
+      io << "] "
+      @return_type.to_s io
+    end
+
+    def diagnostic : String
+      String.build do |s|
+        diagnostic s
+      end
+    end
+
+    def to_s(io : IO)
+      io << "#<JIS2::FunctionDefinition("
+      diagnostic io
+      io << ")>"
     end
   end
 
@@ -151,9 +200,9 @@ module JIS2
 end
 
 lexer = Lexer(String, Int64).build do
-  match :module, :func, :do, :end, :given, :until, :repeat, :finally
+  match :module, :func, :if, :then, :else, :do, :end, :given, :until, :repeat, :finally, :return
   match /∇/, :tt_int
-  match :"[", :"]", :":=", :"=", :"|", :";"
+  match :"[", :"]", :":=", :"=", :|, :"$", :";", :+, :-, :*, :÷∇, :÷, :mod
   match /"([^"]*)"/, :_string, &.[1]
   match /!(\d+)/, :_number, &.[1].to_i64
   match /[a-z]+/, :_word, &.[0]
