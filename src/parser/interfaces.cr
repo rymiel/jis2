@@ -43,6 +43,7 @@ module Parser
   abstract struct IItem
     abstract def production : Production
     abstract def dot : Int32
+
     def body : Array(Node)
       @production.body
     end

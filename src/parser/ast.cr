@@ -92,7 +92,7 @@ module Parser::AST
                     if union_types.includes? ::Nil
                       base_type = union_types.find(&.!= ::Nil)
                       spider << {base_type, [base_type, base_type], [
-                        {0, "optional".id, base_type}
+                        {0, "optional".id, base_type},
                       ], :optional}
                       spider << {base_type, [base_type], [] of Nil, :optional}
                     end
@@ -104,17 +104,17 @@ module Parser::AST
                       unique_name = separator_ann[:name] || target_type
                       spider << {target_type, [unique_name], [] of Nil}
                       spider << {target_type, [unique_name, member], [
-                        {0, "array appended element".id, member}
+                        {0, "array appended element".id, member},
                       ]}
                       spider << {target_type, [unique_name, unique_name, separator, member], [
                         {0, "array base".id, target_type},
-                        {2, "array appended element".id, member}
+                        {2, "array appended element".id, member},
                       ]}
                     else
                       spider << {target_type, [target_type], [] of Nil}
                       spider << {target_type, [target_type, target_type, member], [
                         {0, "array base".id, target_type},
-                        {1, "array appended element".id, member}
+                        {1, "array appended element".id, member},
                       ]}
                     end
                   elsif target_type <= ::Enum
@@ -157,14 +157,14 @@ module Parser::AST
               j.names.last.underscore.stringify
             elsif j.is_a? TypeNode
               sj = if j <= ::Array
-                    j.type_vars[0].name(generic_args: false).split("::").last.underscore + "s"
-                  elsif j <= ::Parser::Ref
-                    j.type_vars[0].name(generic_args: false).split("::").last.underscore
-                  elsif j.union_types.includes?(::Nil)
-                    "opt_#{j.union_types.find(&.!= ::Nil).name(generic_args: false).split("::").last.underscore.id}"
-                  else
-                    j.name(generic_args: false).split("::").last.underscore
-                  end
+                     j.type_vars[0].name(generic_args: false).split("::").last.underscore + "s"
+                   elsif j <= ::Parser::Ref
+                     j.type_vars[0].name(generic_args: false).split("::").last.underscore
+                   elsif j.union_types.includes?(::Nil)
+                     "opt_#{j.union_types.find(&.!= ::Nil).name(generic_args: false).split("::").last.underscore.id}"
+                   else
+                     j.name(generic_args: false).split("::").last.underscore
+                   end
               sj = "opt_#{sj.id}" if is_optional && ji == 0
               sj
             else
@@ -192,7 +192,7 @@ module Parser::AST
                 r_type = r_type.type_vars[0] if r_type <= ::Parser::Ref
                 opt_deref = r_type.union_types.includes?(::Nil)
                 r_type = "Opt(#{r_type.union_types.find(&.!= ::Nil)})".id if opt_deref
-                failure_location = "#{r_idx} (#{ r_name })"
+                failure_location = "#{r_idx} (#{r_name})"
                 failure_location += " of #{i}" unless is_array || is_alias
               %}
               %t{r}, %pos{r} = context[{{ r_idx }}].as_tuple

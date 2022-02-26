@@ -9,23 +9,23 @@ module JIS2
   @[AST::Aliased(Type)]
   AST.smart_enum(PrimitiveType, {
     integer: :tt_int,
-    void: :tt_void,
+    void:    :tt_void,
   })
 
   AST.smart_enum(BlockStatementKind, {
-    given: :given,
+    given:  :given,
     repeat: :repeat,
-    until: :until,
+    until:  :until,
   })
 
   AST.smart_enum(Operator, {
-    equal: :"=",
-    plus: :"+",
-    times: :"*",
-    minus: :"-",
-    divide: :"÷",
+    equal:      :"=",
+    plus:       :"+",
+    times:      :"*",
+    minus:      :"-",
+    divide:     :"÷",
     int_divide: :"÷∇",
-    modulo: :"mod",
+    modulo:     :"mod",
   })
 
   alias Type = PrimitiveType
@@ -46,9 +46,11 @@ module JIS2
   abstract class Statement
     include AST
   end
+
   abstract struct Expression
     include AST
   end
+
   abstract struct BlockStatement
     include AST
   end
@@ -115,6 +117,7 @@ module JIS2
 
     def initialize(@name, @args)
     end
+
     def initialize(name @operator : Operator, @args)
       @name = ""
     end
@@ -148,6 +151,7 @@ module JIS2
 
     def initialize(@condition, @body)
     end
+
     def initialize(@condition, @body, @else_body)
     end
   end
@@ -204,6 +208,7 @@ class JIS2::Assembler
     getter vars = Hash(String, Type).new
     getter name : String
     getter? is_args : Bool
+
     def initialize(@name, @is_args = false)
     end
 
@@ -365,7 +370,7 @@ class JIS2::Assembler
                   when .modulo?         then "MOD"
                   when .times?          then "MUL"
                   when .int_divide?     then "DIV"
-                  else                  raise "invalid call to primitive #{ex}"
+                  else                       raise "invalid call to primitive #{ex}"
                   end
 
           asmout instr, "@#{dest}", "@#{temp_reg}", "@k"
@@ -377,7 +382,7 @@ class JIS2::Assembler
         matching_fn = @module.body.select(JIS2::FunctionDefinition).find { |f| f.args.map(&.type) == types && f.name == ex.name }.not_nil!
         ex.args.reverse_each.with_index do |arg, i|
           to_value arg
-          asmout "PUSH", "@k", comment: "Argument #{matching_fn.args[-(i+1)].name} to #{ex.name}"
+          asmout "PUSH", "@k", comment: "Argument #{matching_fn.args[-(i + 1)].name} to #{ex.name}"
         end
         asmout "BS", label matching_fn
         args_to_destroy = ex.args.map { |i| type_size to_type i }.sum
@@ -511,6 +516,7 @@ end
 
 class JIS2::StyleWalker
   @last = 0
+
   def initialize(@input : String, @out : String::Builder)
   end
 
@@ -519,18 +525,18 @@ class JIS2::StyleWalker
     @out << @input[@last...pos.s]
     @last = pos.e
     color = if sym.in?(:module, :func, :if, :then, :else, :do, :end, :given, :until, :repeat, :finally, :return)
-      Colorize::Color256.new 172
-    elsif sym.in?(:_string, :_number)
-      Colorize::ColorANSI::Magenta
-    elsif sym == :tt_int
-      Colorize::ColorANSI::Green
-    elsif sym.in?(:":=", :"=", :+, :-, :*, :÷∇, :÷, :mod)
-      Colorize::Color256.new 147
-    elsif sym.in?(:|, :";")
-      Colorize::ColorANSI::LightGray
-    else
-      Colorize::ColorANSI::White
-    end
+              Colorize::Color256.new 172
+            elsif sym.in?(:_string, :_number)
+              Colorize::ColorANSI::Magenta
+            elsif sym == :tt_int
+              Colorize::ColorANSI::Green
+            elsif sym.in?(:":=", :"=", :+, :-, :*, :÷∇, :÷, :mod)
+              Colorize::Color256.new 147
+            elsif sym.in?(:|, :";")
+              Colorize::ColorANSI::LightGray
+            else
+              Colorize::ColorANSI::White
+            end
     @out << w.colorize color
   end
 

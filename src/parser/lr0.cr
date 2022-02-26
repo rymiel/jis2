@@ -6,6 +6,7 @@ module Parser::LR0
       io << "[" << @production.smart_name << " -> " << body_with_dot.join(" ") << "]"
     end
   end
+
   class Builder < IBuilder(Item)
     def initialize(@analysis : Analysis(self))
     end

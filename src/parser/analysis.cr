@@ -1,7 +1,6 @@
 require "string_pool"
 
 module Parser
-
   alias Action = Proc(Array(StackSym), StackSym?)
   record ActionableProduction, production : Production, action : Action? do
     def inspect(io : IO)
@@ -38,10 +37,10 @@ module Parser
       name = @string_pool.get name
       mapped = items.to_a.map { |i|
         x = case i
-        when String then NonTerminal.new @string_pool.get i
-        when Symbol then Terminal.new i
-        else raise "Invalid rule item #{i.class}"
-        end
+            when String then NonTerminal.new @string_pool.get i
+            when Symbol then Terminal.new i
+            else             raise "Invalid rule item #{i.class}"
+            end
         x.as Node
       }
       mapped = [EPSILON] of Node if mapped.empty?
@@ -131,16 +130,16 @@ module Parser
         done = true
         all_symbols.each do |x|
           s = case x
-          in Terminal then Set(Node){x}
-          in NonTerminal
-            running = @first[x].dup
-            @rules.map(&.production).select(&.name_idx.== x.name_idx).each do |candidate|
-              running += first(candidate.body.reject(DOT))
-              running << EPSILON if candidate.epsilon?
-            end
-            running
-          in Node then Set(Node).new
-          end
+              in Terminal then Set(Node){x}
+              in NonTerminal
+                running = @first[x].dup
+                @rules.map(&.production).select(&.name_idx.== x.name_idx).each do |candidate|
+                  running += first(candidate.body.reject(DOT))
+                  running << EPSILON if candidate.epsilon?
+                end
+                running
+              in Node then Set(Node).new
+              end
           done = false if s != @first[x]
           @first[x] = s
         end

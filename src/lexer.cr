@@ -39,26 +39,26 @@ class Lexer(*T)
     until pos == input.size
       found = false
       next if @skips.each do |m|
-        if match = m.match(input, pos, Regex::Options::ANCHORED)
-          pos = match.end
-          break true
-        end
-      end
+                if match = m.match(input, pos, Regex::Options::ANCHORED)
+                  pos = match.end
+                  break true
+                end
+              end
       next if @matches.each do |m, sym, r|
-        if match = m.match(input, pos, Regex::Options::ANCHORED)
-          r = r.call match if r.is_a? Proc
-          pos = Parser::ChrPos.new match.begin, match.end
-          if r.nil?
-            at.add sym, pos: pos
-          else
-            at.add sym, r, pos: pos
-          end
-          pos = match.end
-          break true
-        end
-      end
+                if match = m.match(input, pos, Regex::Options::ANCHORED)
+                  r = r.call match if r.is_a? Proc
+                  pos = Parser::ChrPos.new match.begin, match.end
+                  if r.nil?
+                    at.add sym, pos: pos
+                  else
+                    at.add sym, r, pos: pos
+                  end
+                  pos = match.end
+                  break true
+                end
+              end
       next if found
-      raise "no match at pos #{pos}: `#{input[pos..pos+30].dump_unquoted}`..."
+      raise "no match at pos #{pos}: `#{input[pos..pos + 30].dump_unquoted}`..."
     end
     at.eof
   end

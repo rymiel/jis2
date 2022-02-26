@@ -6,6 +6,7 @@ module Parser::LR1
       io << "[" << @production.smart_name << " -> " << body_with_dot.join(" ") << "; " << lookahead << "]"
     end
   end
+
   class Builder < IBuilder(Item)
     def initialize(@analysis : Analysis(self))
     end
@@ -28,7 +29,7 @@ module Parser::LR1
               next unless rule.production.name_idx == r.name_idx
               compound_first = @analysis.first(r2, item.lookahead)
               compound_first.each do |b|
-                j << Item.new  rule.production, 0, b
+                j << Item.new rule.production, 0, b
               end
             end
           end
