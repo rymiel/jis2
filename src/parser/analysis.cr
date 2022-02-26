@@ -60,38 +60,44 @@ module Parser
 
       populate_first
       populate_follow(e.result)
-      states = Array(Automaton::State).new
+      channel = Channel({Int32, Automaton::State}).new
 
       c = @builder.items(e)
+      states = Array(Automaton::State).unsafe_build(c.size)
       c.each_with_index do |i, j|
-        state = Automaton::State.new
-        states << state
+        spawn do
+          state = Automaton::State.new
 
-        apply_goto = ->(node : Node) {
-          if transition_index = c.index @builder.goto(i, node)
-            state.add_action node, transition_index
-          end
-        }
-
-        i.each do |item|
-          state.add_action(nil, nil) if item == @builder.final(e)
-          if (right_of_dot = item.right_of_dot?).nil?
-            left_of_dot = item.body[item.dot - 1]?
-            unless left_of_dot.nil?
-              unless item.production.result == e.result
-                @builder.make_reduction(item) do |a|
-                  matching_rule = @rules.find(&.production.== item.production).not_nil!
-                  state.add_action a, matching_rule
+          i.each do |item|
+            state.add_action(nil, nil) if item == @builder.final(e)
+            if (right_of_dot = item.right_of_dot?).nil?
+              left_of_dot = item.body[item.dot - 1]?
+              unless left_of_dot.nil?
+                unless item.production.result == e.result
+                  @builder.make_reduction(item) do |a|
+                    matching_rule = @rules.find(&.production.== item.production).not_nil!
+                    state.add_action a, matching_rule
+                  end
                 end
               end
+            elsif right_of_dot.is_a? Terminal || right_of_dot == EPSILON
+              if transition_index = c.index @builder.goto(i, right_of_dot)
+                state.add_action right_of_dot, transition_index
+              end
             end
-          elsif right_of_dot.is_a? Terminal || right_of_dot == EPSILON
-            apply_goto.call(right_of_dot)
+            all_symbols.select(NonTerminal).each do |k|
+              if transition_index = c.index @builder.goto(i, k)
+                state.add_action k, transition_index
+              end
+            end
           end
-          all_symbols.select(NonTerminal).each do |k|
-            apply_goto.call(k)
-          end
+
+          channel.send({j, state})
         end
+      end
+      c.each do
+        i, s = channel.receive
+        states[i] = s
       end
       states
     end
