@@ -5,31 +5,28 @@ module JIS2
   alias AST = Parser::AST
   alias Ref = Parser::Ref
   alias Opt = Parser::Opt
-  @[AST::EnumVal(
-    integer: :tt_int
-  )]
-  @[AST::Aliased(Type)]
-  enum PrimitiveType
-    Integer
-  end
 
-  @[AST::EnumVal(
+  @[AST::Aliased(Type)]
+  AST.smart_enum(PrimitiveType, {
+    integer: :tt_int,
+    void: :tt_void,
+  })
+
+  AST.smart_enum(BlockStatementKind, {
     given: :given,
     repeat: :repeat,
-    until: :until
-  )]
-  enum BlockStatementKind
-    Given
-    Repeat
-    Until
-  end
+    until: :until,
+  })
 
-  @[AST::EnumVal(
-    equal: :"="
-  )]
-  enum Operator
-    Equal
-  end
+  AST.smart_enum(Operator, {
+    equal: :"=",
+    plus: :"+",
+    times: :"*",
+    minus: :"-",
+    divide: :"÷",
+    int_divide: :"÷∇",
+    modulo: :"mod",
+  })
 
   alias Type = PrimitiveType
 
