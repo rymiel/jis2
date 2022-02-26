@@ -262,5 +262,17 @@ style_out = String.build do |sb|
 end
 puts style_out
 
-PrettyPrint.format(tree.try &.value(JIS2::Module), STDOUT, 119)
+parser = Parser::Analysis(Parser::LR1::Builder).new
+puts "Composing rules"
+JIS2::AST.compose_known_rules parser
+puts "Building parser"
+rules = parser.build("program")
+puts "Assembling automaton"
+at = Parser::Automaton.new(rules)
+
+puts "Running lexer"
+top_level = lexer.lex(input, at).not_nil!.t.value(JIS2::Module)
+puts "Complete!"
+
+PrettyPrint.format(top_level, STDOUT, 119)
 puts
